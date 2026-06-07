@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}競合企業 — 電気入札サーチ{% endblock %}
+
+{% block content %}
+<div class="topbar"><h1>競合企業（落札者）の分析</h1></div>
+<p class="lead">過去の落札実績から、同じ電気工事市場で競合する企業を落札件数順に並べています。</p>
+
+<form class="filterbar" method="get" action="{{ url_for('competitors') }}">
+  <label class="field grow">
+    <span>会社名</span>
+    <input type="text" name="q" value="{{ selected.q }}" placeholder="例: 電設 / 工業（表記ゆれを吸収）">
+  </label>
+  <label class="field">
+    <span>都道府県</span>
+    <select name="prefecture">
+      <option value="">すべて</option>
+      {% for pref in prefectures %}
+        <option value="{{ pref }}" {{ 'selected' if selected.prefecture == pref }}>{{ pref }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="actions">
+    <button type="submit" class="btn primary">絞り込む</button>
+    <a class="btn" href="{{ url_for('competitors') }}">クリア</a>
+  </div>
+</form>
+
+<div class="result-head"><span class="count">{{ rows|length }} 社</span></div>
+
+{% if rows %}
+<table class="list">
+  <thead>
+    <tr><th>順位</th><th>企業名</th><th>落札件数</th><th>展開エリア</th><th>主な発注機関</th></tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td class="rank">{{ loop.index }}</td>
+      <td><a href="{{ url_for('competitor_detail', name=r.winner) }}">{{ r.winner }}</a></td>
+      <td><span class="win-badge">{{ r.wins }} 件</span></td>
+      <td>{{ r.prefectures.replace(',', ' / ') }}</td>
+      <td class="dim">{{ r.agencies.replace(',', '、') }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">落札者データのある案件がありません。</p>
+{% endif %}
+{% endblock %}

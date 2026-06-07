@@ -1,0 +1,15 @@
+# Render.com 無料プランでのデプロイ定義（ランニングコスト0円）。
+# Render に GitHub リポジトリを接続すれば、この設定で自動デプロイされる。
+# 無料プランは一定時間アクセスが無いとスリープ（コールドスタート）。料金はかからない。
+services:
+  - type: web
+    name: kawano-njss-modoki
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: FLASK_DEBUG
+        value: "0"

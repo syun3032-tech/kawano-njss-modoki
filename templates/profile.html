@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}マイ条件 — 電気入札サーチ{% endblock %}
+
+{% block content %}
+<div class="topbar"><h1>マイ条件（保有資格・対応範囲）</h1></div>
+<p class="lead">あなたの会社の対応エリア・業種・規模を登録すると、「マッチ案件」で条件に合う案件だけをリサーチして表示します。</p>
+
+<form class="profile-form" method="post" action="{{ url_for('profile') }}">
+  <section class="pf-block">
+    <h2>対応エリア（都道府県）</h2>
+    <p class="pf-hint">入札参加できる／したい都道府県をすべて選択。</p>
+    {% for region, prefs in regions.items() %}
+      <div class="pref-group">
+        <div class="pref-group-name">{{ region }}</div>
+        <div class="pref-checks">
+          {% for pref in prefs %}
+            <label class="check">
+              <input type="checkbox" name="prefectures" value="{{ pref }}"
+                     {{ 'checked' if pref in selected_prefs }}>
+              <span>{{ pref }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  </section>
+
+  <section class="pf-block">
+    <h2>対応業種（複数選択可）</h2>
+    <p class="pf-hint">入札に参加できる工事の種類をすべて選択。</p>
+    <div class="pref-checks">
+      {% for b in biz_types %}
+        <label class="check">
+          <input type="checkbox" name="categories" value="{{ b }}" {{ 'checked' if b in selected_cats }}>
+          <span>{{ b }}</span>
+        </label>
+      {% endfor %}
+    </div>
+    <input type="text" name="categories_other" placeholder="その他の業種（カンマ区切りで追加）"
+           value="{{ selected_cats | reject('in', biz_types) | join(', ') }}">
+  </section>
+
+  <div class="pf-row">
+    <section class="pf-block">
+      <h2>予算上限（任意）</h2>
+      <p class="pf-hint">予定価格がこの金額以下の案件に絞る。空欄で制限なし。</p>
+      <input type="text" name="budget_max" value="{{ prof.budget_max }}" placeholder="例: 100,000,000">
+    </section>
+    <section class="pf-block">
+      <h2>経審等級（参考）</h2>
+      <p class="pf-hint">自社の格付。記録用（マッチには未使用）。</p>
+      <input type="text" name="grade" value="{{ prof.grade }}" placeholder="例: B">
+    </section>
+  </div>
+
+  <section class="pf-block">
+    <h2>保有資格・登録（複数選択可）</h2>
+    <p class="pf-hint">自社が持っている許可・資格・登録をすべて選択。</p>
+    <div class="pref-checks">
+      {% for qopt in qual_options %}
+        <label class="check">
+          <input type="checkbox" name="quals" value="{{ qopt }}" {{ 'checked' if qopt in selected_quals }}>
+          <span>{{ qopt }}</span>
+        </label>
+      {% endfor %}
+    </div>
+    <input type="text" name="quals_other" placeholder="その他の資格・登録（カンマ区切りで追加）"
+           value="{{ selected_quals | reject('in', qual_options) | join(', ') }}">
+  </section>
+
+  <div class="pf-actions">
+    <button type="submit" class="btn primary">保存してマッチ案件を見る</button>
+  </div>
+</form>
+{% endblock %}

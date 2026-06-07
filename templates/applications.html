@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}申請管理 — 電気入札サーチ{% endblock %}
+
+{% block content %}
+<div class="topbar"><h1>入札参加申請の管理</h1></div>
+
+<form class="status-tabs" method="get" action="{{ url_for('applications') }}">
+  <a class="tab {{ 'active' if not selected_status }}" href="{{ url_for('applications') }}">すべて</a>
+  {% for s in statuses %}
+    <a class="tab {{ 'active' if selected_status == s }}"
+       href="{{ url_for('applications', status=s) }}">{{ s }}</a>
+  {% endfor %}
+</form>
+
+{% if rows %}
+<table class="list">
+  <thead>
+    <tr>
+      <th>状況</th><th>案件名</th><th>発注機関</th><th>地域</th>
+      <th>締切</th><th>申請日</th><th>メモ</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td><span class="status-badge {{ status_class.get(r.status, '') }}">{{ r.status }}</span></td>
+      <td><a href="{{ url_for('case_detail', case_id=r.case_id) }}">{{ r.title }}</a></td>
+      <td>{{ r.agency }}</td>
+      <td>{{ r.prefecture }}</td>
+      <td>{{ r.deadline or '—' }}</td>
+      <td>{{ r.applied_date or '—' }}</td>
+      <td class="dim">{{ r.note or '' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">
+  {% if selected_status %}「{{ selected_status }}」の案件はありません。{% else %}
+  まだ申請管理に登録された案件がありません。案件詳細から状況を登録してください。{% endif %}
+</p>
+{% endif %}
+{% endblock %}

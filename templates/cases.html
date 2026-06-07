@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}案件を探す — 電気入札サーチ{% endblock %}
+
+{% block content %}
+<div class="topbar"><h1>{{ '新着案件（直近30日）' if selected.new else '案件を探す' }}</h1></div>
+
+<form class="filterbar" method="get" action="{{ url_for('cases') }}">
+  <label class="field">
+    <span>地方</span>
+    <select name="region" id="region">
+      <option value="">すべての地方</option>
+      {% for region in regions.keys() %}
+        <option value="{{ region }}" {{ 'selected' if selected.region == region }}>{{ region }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">
+    <span>都道府県</span>
+    <select name="prefecture" id="prefecture">
+      <option value="">すべて</option>
+      {% for pref in pref_options %}
+        <option value="{{ pref }}" {{ 'selected' if selected.prefecture == pref }}>{{ pref }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">
+    <span>業種</span>
+    <select name="category">
+      <option value="">すべて</option>
+      {% for c in categories %}
+        <option value="{{ c }}" {{ 'selected' if selected.category == c }}>{{ c }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">
+    <span>入札方式</span>
+    <select name="bid_method">
+      <option value="">すべて</option>
+      {% for m in bid_methods %}
+        <option value="{{ m }}" {{ 'selected' if selected.bid_method == m }}>{{ m }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">
+    <span>仕様書</span>
+    <select name="spec_status">
+      <option value="">すべて</option>
+      <option value="available"   {{ 'selected' if selected.spec_status == 'available' }}>取得可</option>
+      <option value="unavailable" {{ 'selected' if selected.spec_status == 'unavailable' }}>取得不可</option>
+      <option value="unknown"     {{ 'selected' if selected.spec_status == 'unknown' }}>未判定</option>
+    </select>
+  </label>
+  <label class="field grow">
+    <span>キーワード</span>
+    <input type="text" name="q" value="{{ selected.q }}" placeholder="案件名・発注機関">
+  </label>
+  <label class="field">
+    <span>並び替え</span>
+    <select name="sort">
+      <option value="deadline"  {{ 'selected' if selected.sort == 'deadline' }}>締切が近い順</option>
+      <option value="announced" {{ 'selected' if selected.sort == 'announced' }}>公告が新しい順</option>
+    </select>
+  </label>
+  <div class="actions">
+    <button type="submit" class="btn primary">絞り込む</button>
+    <a class="btn" href="{{ url_for('cases') }}">クリア</a>
+  </div>
+</form>
+
+<div class="result-head">
+  <span class="count">{{ rows|length }} 件</span>
+  <span class="muted">/ 全 {{ total }} 件</span>
+</div>
+
+{% if rows %}
+<div class="case-list">
+  {% for c in rows %}
+  <a class="case-row" href="{{ url_for('case_detail', case_id=c.id) }}">
+    <div class="cr-main">
+      <div class="cr-title">{{ c.title }}</div>
+      <div class="cr-meta">
+        {% if c.announced_date and c.announced_date >= new_threshold %}<span class="tag new">新着</span>{% endif %}
+        <span class="cr-agency">{{ c.agency }}</span>
+        {% if c.prefecture %}<span class="tag region">{{ c.prefecture }}</span>{% endif %}
+        <span class="tag cat">{{ c.category }}</span>
+      </div>
+      <div class="cr-sub">
+        {% if c.bid_method %}<span><span class="lbl">入札方式</span>{{ c.bid_method }}</span>{% endif %}
+        {% if c.announced_date %}<span><span class="lbl">公告</span>{{ c.announced_date }}</span>{% endif %}
+        {% if c.deadline %}<span class="deadline"><span class="lbl">締切</span>{{ c.deadline }}</span>{% endif %}
+        {% if c.budget %}<span class="price"><span class="lbl">予定価格</span>{{ c.budget }}</span>{% endif %}
+        {% if c.winner %}<span><span class="lbl">落札</span>{{ c.winner }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="cr-side">
+      {% if c.spec_status == 'available' %}<span class="spec-pill ok">仕様書 取得可</span>
+      {% elif c.spec_status == 'unavailable' %}<span class="spec-pill ng">仕様書 取得不可</span>
+      {% else %}<span class="spec-pill unk">仕様書 未判定</span>{% endif %}
+      {% if c.spec_status == 'unavailable' and c.spec_reason %}
+        <span class="cr-reason">{{ spec_reasons.get(c.spec_reason, c.spec_reason) }}</span>
+      {% endif %}
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty">条件に合う案件がありません。フィルタを緩めてみてください。</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const regionSel = document.getElementById('region');
+  const prefSel = document.getElementById('prefecture');
+  regionSel.addEventListener('change', async () => {
+    const region = regionSel.value;
+    prefSel.innerHTML = '<option value="">すべて</option>';
+    if (!region) return;
+    const res = await fetch('/api/prefectures?region=' + encodeURIComponent(region));
+    for (const p of await res.json()) {
+      const opt = document.createElement('option');
+      opt.value = p; opt.textContent = p;
+      prefSel.appendChild(opt);
+    }
+  });
+</script>
+{% endblock %}
