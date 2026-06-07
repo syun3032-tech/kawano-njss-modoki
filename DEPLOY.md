@@ -1,5 +1,21 @@
 # デプロイ手順 — Kawanoさん NJSSモドキ（ランニングコスト 0 円）
 
+> リポジトリ: https://github.com/infodilunova-cpu/kawano-njss-modoki （private）
+> ワンクリック: https://render.com/deploy?repo=https://github.com/infodilunova-cpu/kawano-njss-modoki
+
+## 仕上げ（あなたの操作・約2分・無料）
+1. https://dashboard.render.com にログイン（GitHubでサインイン可）
+2. 「New +」→「Blueprint」→ リポジトリ `kawano-njss-modoki` を選択（`render.yaml` を自動検出）
+3. 「Apply」→ 数分でビルド完了 → `https://kawano-njss-modoki.onrender.com` で公開
+   - 無料プランは無アクセス時スリープ（次アクセスで数十秒の起動待ち）。**料金は発生しない**。
+
+> 注（無料ホストの仕様）: 無料プランはディスクが揮発性のため、**公開後にサイト上で
+> 変更した「マイ条件」「申請管理」は再起動で消える**（閲覧・検索・マッチは常に動作）。
+> データは同梱の `denki_bid.db` が基準。最新化は手元で `update.py` → DBを commit/push で反映。
+> マイ条件・申請も永続させたいならローカル起動、または永続ディスク付き（有料）で運用。
+
+---
+
 このアプリは **Flask + SQLite だけ**で動く。データ更新（スクレイピング）は
 **ローカルPCで `update.py`** を実行し、できた `denki_bid.db` を一緒にデプロイする。
 → デプロイ先（クラウド）は重いブラウザ処理を一切やらないので、**無料プランで十分**。
