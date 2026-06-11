@@ -24,13 +24,11 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: 依存インストール（Playwright含む）
-        run: |
-          pip install -r requirements-local.txt
-          python -m playwright install --with-deps chromium
+      - name: 依存インストール（軽量・Playwright不要）
+        run: pip install -r requirements.txt
 
-      - name: データ更新（全国・実データ）
-        run: python update.py --reset
+      - name: データ更新（官公需API・全国／HTTPのみで高速・堅牢）
+        run: python update.py --reset --fast
 
       - name: 変更があれば commit & push
         run: |

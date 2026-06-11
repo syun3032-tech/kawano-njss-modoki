@@ -25,13 +25,38 @@ import seed_data
 
 
 def run(reset: bool = False, koukai_instances: list[str] | None = None,
-        with_samples: bool = False) -> None:
+        with_samples: bool = False, fast: bool = False) -> None:
+    # fast=True: 官公需API＋監視機関のみ（HTTPのみ・Playwright不要）＝毎日の自動更新向けで高速・堅牢。
     db.init_db()
     if reset:
         removed = db.clear_cases()
         print(f"[reset] 既存案件 {removed} 件をクリア")
 
-    # 1) 自治体の電気工事（実データ）— 京都府・愛知県・堺市(大阪府)
+    # 0) 官公需情報ポータルAPI（中小企業庁）— 国・地方・独法を全国横断集約した公式・無料API。
+    #    これが主力ソース（HTTPのみ・全国・仕様書添付つき）。関西を厚く取ってから全国。
+    import kkj_scraper
+    try:
+        n = kkj_scraper.load(lg_codes=kkj_scraper.KANSAI_CODES)  # 関西を厚く
+        print(f"[官公需API 関西] {n} 件")
+    except Exception as e:  # noqa: BLE001
+        print(f"[官公需API 関西] 失敗: {str(e)[:70]}")
+    try:
+        n = kkj_scraper.load()  # 全国
+        print(f"[官公需API 全国] {n} 件")
+    except Exception as e:  # noqa: BLE001
+        print(f"[官公需API 全国] 失敗: {str(e)[:70]}")
+
+    if fast:
+        # 高速モード：監視機関だけ足して終了（Playwrightは使わない）
+        try:
+            import agency_import
+            print(f"[監視機関リスト] {agency_import.load()} 機関")
+        except Exception as e:  # noqa: BLE001
+            print(f"[監視機関リスト] 失敗: {str(e)[:70]}")
+        print(f"=== 高速更新完了: 案件 {db.count_cases()} 件 / 監視機関 {db.count_agencies()} 機関 ===")
+        return
+
+    # 1) 自治体の電気工事（実データ・個別システム）— 京都府・愛知県・堺市(大阪府)
     for mod_name, label in [("kyoto_scraper", "京都府"), ("aichi_scraper", "愛知県(e-Aichi)")]:
         try:
             mod = __import__(mod_name)
@@ -102,4 +127,5 @@ if __name__ == "__main__":
     if "--koukai" in sys.argv:
         i = sys.argv.index("--koukai")
         insts = [a for a in sys.argv[i + 1:] if not a.startswith("--")]
-    run(reset=reset, koukai_instances=insts, with_samples=with_samples)
+    run(reset=reset, koukai_instances=insts, with_samples=with_samples,
+        fast="--fast" in sys.argv)
