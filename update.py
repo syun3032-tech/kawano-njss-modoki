@@ -24,15 +24,25 @@ import ppi_scraper
 import seed_data
 
 
-def run(reset: bool = False, koukai_instances: list[str] | None = None) -> None:
+def run(reset: bool = False, koukai_instances: list[str] | None = None,
+        with_samples: bool = False) -> None:
     db.init_db()
     if reset:
         removed = db.clear_cases()
         print(f"[reset] 既存案件 {removed} 件をクリア")
 
-    # 1) 関西サンプル（土台）
-    n_sample = seed_data.seed()
-    print(f"[sample] 関西サンプル {n_sample} 件")
+    # 1) 京都府 入札情報公開システム — 自治体の「現在募集中」電気工事（実データ）
+    try:
+        import kyoto_scraper
+        n = kyoto_scraper.load()
+        print(f"[京都府 自治体・実データ] {n} 件")
+    except Exception as e:  # noqa: BLE001
+        print(f"[京都府] 取得失敗（スキップ）: {str(e)[:80]}")
+
+    # 1b) サンプル（既定OFF。--with-samples で関西の見本データを足す）
+    if with_samples:
+        n_sample = seed_data.seed()
+        print(f"[sample] 関西サンプル {n_sample} 件")
 
     # 2) PPI（i-ppi.jp）近畿の実データ — 国の機関の電気設備工事
     #    入札公告（現在募集中）と入札の経過（落札者=競合つき）の両方を取り込む。
@@ -63,8 +73,9 @@ def run(reset: bool = False, koukai_instances: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     reset = "--reset" in sys.argv
+    with_samples = "--with-samples" in sys.argv
     insts: list[str] = []
     if "--koukai" in sys.argv:
         i = sys.argv.index("--koukai")
         insts = [a for a in sys.argv[i + 1:] if not a.startswith("--")]
-    run(reset=reset, koukai_instances=insts)
+    run(reset=reset, koukai_instances=insts, with_samples=with_samples)
