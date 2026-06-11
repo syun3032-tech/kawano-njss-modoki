@@ -1,7 +1,15 @@
 # ⚡ Kawanoさん NJSSモドキ（kawano-njss-modoki）
 
-河野さん向け。関西中心の**電気工事入札**を、**地方→都道府県**で NJSS 風に絞り込む独立ツール。
+河野さん向け。**全国の電気工事入札**を、**地方→都道府県**で NJSS 風に絞り込む独立ツール。
 **SQLite だけで動く**（Supabase / API キー不要）。デプロイ手順は [DEPLOY.md](DEPLOY.md)。
+
+**公開URL: https://kawano-njss-modoki.onrender.com**（Render無料・毎日自動更新）
+
+## 実データと自動更新（運用構成）
+- **案件データ**: PPI（i-ppi.jp）全国9地方の国の機関 電気設備工事＋京都府の自治体電気工事＝**全国の実データ**
+- **監視機関**: クライアント提供スプレッドシートの**全国1000機関**を取り込み（公式入札ページへ導線）
+- **自動更新**: GitHub Actions が毎日 `update.py` を実行→DB更新→push→Render自動再デプロイ（**完全無料**）
+- 手動更新: `python update.py --reset`（[update.py](update.py)）
 
 ## できること（MVP）
 
