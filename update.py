@@ -31,7 +31,7 @@ def run(reset: bool = False, koukai_instances: list[str] | None = None,
         removed = db.clear_cases()
         print(f"[reset] 既存案件 {removed} 件をクリア")
 
-    # 1) 自治体の「現在募集中」電気工事（実データ）— 京都府・愛知県
+    # 1) 自治体の電気工事（実データ）— 京都府・愛知県・堺市(大阪府)
     for mod_name, label in [("kyoto_scraper", "京都府"), ("aichi_scraper", "愛知県(e-Aichi)")]:
         try:
             mod = __import__(mod_name)
@@ -39,6 +39,14 @@ def run(reset: bool = False, koukai_instances: list[str] | None = None,
             print(f"[{label} 自治体・実データ] {n} 件")
         except Exception as e:  # noqa: BLE001
             print(f"[{label}] 取得失敗（スキップ）: {str(e)[:80]}")
+    # 関西を厚く：PPUBC系の自治体（堺市など。INSTANCESにbase追加で拡張可）
+    try:
+        import ppubc_scraper
+        for inst in ppubc_scraper.INSTANCES:
+            n = ppubc_scraper.load(inst)
+            print(f"[{inst}(PPUBC) 自治体・実データ] {n} 件")
+    except Exception as e:  # noqa: BLE001
+        print(f"[PPUBC] 取得失敗（スキップ）: {str(e)[:80]}")
 
     # 1b) サンプル（既定OFF。--with-samples で関西の見本データを足す）
     if with_samples:
