@@ -28,12 +28,16 @@ def run(reset: bool = False, koukai_instances: list[str] | None = None,
         with_samples: bool = False, fast: bool = False) -> None:
     # fast=True: 官公需API＋監視機関のみ（HTTPのみ・Playwright不要）＝毎日の自動更新向けで高速・堅牢。
     db.init_db()
-    if reset:
+    if reset and not fast:
         removed = db.clear_cases()
         print(f"[reset] 既存案件 {removed} 件をクリア")
 
     # 0) 官公需情報ポータルAPI（中小企業庁）— 国・地方・独法を全国横断集約した公式・無料API。
     #    これが主力ソース（HTTPのみ・全国・仕様書添付つき）。関西を厚く取ってから全国。
+    # fast(毎日更新)では「官公需APIだけ」入れ替え、PPI競合や自治体詳細は保持する。
+    if fast:
+        removed = db.clear_cases("官公需API")
+        print(f"[fast] 官公需API {removed} 件のみ入れ替え（PPI/自治体は保持）")
     import kkj_scraper
     try:
         n = kkj_scraper.load(lg_codes=kkj_scraper.KANSAI_CODES)  # 関西を厚く

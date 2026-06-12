@@ -27,8 +27,8 @@ jobs:
       - name: 依存インストール（軽量・Playwright不要）
         run: pip install -r requirements.txt
 
-      - name: データ更新（官公需API・全国／HTTPのみで高速・堅牢）
-        run: python update.py --reset --fast
+      - name: データ更新（官公需API・全国／HTTPのみで高速・堅牢。PPI競合や自治体は保持）
+        run: python update.py --fast
 
       - name: 変更があれば commit & push
         run: |
