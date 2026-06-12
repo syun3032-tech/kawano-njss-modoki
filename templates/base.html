@@ -38,5 +38,33 @@
   </main>
 </div>
 {% block scripts %}{% endblock %}
+<script>window.__KAWANO_PROFILE_SET = {{ 'true' if profile_set else 'false' }};</script>
+<script>
+/* マイ条件のブラウザ保存→自動復元（無料ホストでディスクが揮発しても消えないように）。
+   サーバにマイ条件が無く、ブラウザ(localStorage)に有れば、サーバへ静かに復元する。 */
+(function () {
+  var KEY = 'kawanoProfile';
+  if (window.__KAWANO_PROFILE_SET) return;            // サーバに既にある＝復元不要
+  if (sessionStorage.getItem('kawanoRestored')) return; // 復元の無限ループ防止
+  var s = localStorage.getItem(KEY);
+  if (!s) return;
+  try {
+    var p = JSON.parse(s);
+    if (!(p && p.prefectures && p.prefectures.length)) return;
+    var b = new URLSearchParams();
+    b.append('company', p.company || '');
+    (p.prefectures || []).forEach(function (v) { b.append('prefectures', v); });
+    (p.categories || []).forEach(function (v) { b.append('categories', v); });
+    b.append('categories_other', '');
+    (p.quals || []).forEach(function (v) { b.append('quals', v); });
+    b.append('quals_other', '');
+    b.append('budget_max', p.budget_max || '');
+    b.append('grade', p.grade || '');
+    sessionStorage.setItem('kawanoRestored', '1');
+    fetch('/profile', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: b.toString(), redirect: 'manual' }).then(function () { location.reload(); });
+  } catch (e) {}
+})();
+</script>
 </body>
 </html>

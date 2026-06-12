@@ -79,3 +79,40 @@
   </div>
 </form>
 {% endblock %}
+
+{% block scripts %}
+<script>
+/* マイ条件をブラウザにも保存（無料ホストでサーバ側が消えても自動復元できるように）。 */
+(function () {
+  var KEY = 'kawanoProfile';
+  // サーバの現在値をミラー保存（空なら触らない）
+  var server = {
+    company: {{ prof.company | tojson }},
+    prefectures: {{ selected_prefs | tojson }},
+    categories: {{ selected_cats | tojson }},
+    quals: {{ selected_quals | tojson }},
+    budget_max: {{ prof.budget_max | tojson }},
+    grade: {{ prof.grade | tojson }}
+  };
+  if (server.prefectures && server.prefectures.length) {
+    localStorage.setItem(KEY, JSON.stringify(server));
+  }
+  // 送信時にもブラウザへ保存
+  var form = document.querySelector('.profile-form');
+  if (form) form.addEventListener('submit', function () {
+    var val = function (n) { var e = form.querySelector('[name="' + n + '"]'); return e ? e.value : ''; };
+    var checked = function (n) { return [].map.call(form.querySelectorAll('[name="' + n + '"]:checked'), function (e) { return e.value; }); };
+    var split = function (s) { return (s || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean); };
+    var data = {
+      company: val('company'),
+      prefectures: checked('prefectures'),
+      categories: checked('categories').concat(split(val('categories_other'))),
+      quals: checked('quals').concat(split(val('quals_other'))),
+      budget_max: val('budget_max'),
+      grade: val('grade')
+    };
+    if (data.prefectures.length) localStorage.setItem(KEY, JSON.stringify(data));
+  });
+})();
+</script>
+{% endblock %}

@@ -53,6 +53,16 @@ app.secret_key = os.environ.get("SECRET_KEY", "kawano-njss-modoki-local")  # fla
 db.init_db()
 
 
+@app.context_processor
+def inject_profile_set():
+    """無料ホストはディスク揮発のためマイ条件が消える。ブラウザ保存→自動復元の判定用に、
+    サーバにマイ条件があるかを全テンプレへ渡す。"""
+    try:
+        return {"profile_set": bool(db.get_profile().get("prefectures"))}
+    except Exception:  # noqa: BLE001
+        return {"profile_set": False}
+
+
 @app.route("/")
 def cases():
     # 初期表示は関西中心（クエリ無しのランディング時は近畿をデフォルト）

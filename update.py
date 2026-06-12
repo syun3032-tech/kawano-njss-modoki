@@ -34,21 +34,22 @@ def run(reset: bool = False, koukai_instances: list[str] | None = None,
 
     # 0) 官公需情報ポータルAPI（中小企業庁）— 国・地方・独法を全国横断集約した公式・無料API。
     #    これが主力ソース（HTTPのみ・全国・仕様書添付つき）。関西を厚く取ってから全国。
-    # fast(毎日更新)では「官公需APIだけ」入れ替え、PPI競合や自治体詳細は保持する。
-    if fast:
-        removed = db.clear_cases("官公需API")
-        print(f"[fast] 官公需API {removed} 件のみ入れ替え（PPI/自治体は保持）")
+    # 【フェイルセーフ】先に取得してから、成功(>0件)した時だけ差し替える。
+    #   APIが落ちている時に既存データを消さない。fast時はAPI分だけ入替（PPI/自治体は保持）。
     import kkj_scraper
     try:
-        n = kkj_scraper.load(lg_codes=kkj_scraper.KANSAI_CODES)  # 関西を厚く
-        print(f"[官公需API 関西] {n} 件")
+        rows = kkj_scraper.fetch(lg_codes=kkj_scraper.KANSAI_CODES)  # 関西を厚く
+        rows += kkj_scraper.fetch()                                  # 全国
+        rows = [r for r in rows if r.get("title")]
+        if rows:
+            if fast:
+                db.clear_cases("官公需API")  # 成功時のみ古いAPI行を入替
+            n = db.upsert_cases(rows)
+            print(f"[官公需API] {n} 件（関西＋全国・重複除外）")
+        else:
+            print("[官公需API] 取得0件のため既存データを維持（差し替えなし）")
     except Exception as e:  # noqa: BLE001
-        print(f"[官公需API 関西] 失敗: {str(e)[:70]}")
-    try:
-        n = kkj_scraper.load()  # 全国
-        print(f"[官公需API 全国] {n} 件")
-    except Exception as e:  # noqa: BLE001
-        print(f"[官公需API 全国] 失敗: {str(e)[:70]}")
+        print(f"[官公需API] 失敗・既存データ維持: {str(e)[:70]}")
 
     if fast:
         # 高速モード：監視機関だけ足して終了（Playwrightは使わない）
