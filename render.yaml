@@ -6,7 +6,7 @@ services:
     name: kawano-njss-modoki
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && python update.py --fast
     startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT
     envVars:
       - key: SECRET_KEY

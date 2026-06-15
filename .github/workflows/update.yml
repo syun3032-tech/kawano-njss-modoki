@@ -1,44 +1,30 @@
 name: データ自動更新（毎日）
 
-# 毎日 JST 6:00（UTC 21:00）に実行 ＋ 手動実行も可。
-# クラウド上で update.py を回し、最新の入札データを denki_bid.db に取り込み、
-# 変更があれば commit/push → Render が自動再デプロイ。すべて GitHub Actions の無料枠内。
+# 毎日 JST 6:00（UTC 21:00）に Render を再デプロイ。
+# Render のビルドコマンドが update.py --fast を実行し、最新の入札データを生成。
+# DB はビルド時生成のため git には含めない（83MB 問題の解消）。
 on:
   schedule:
     - cron: "0 21 * * *"
   workflow_dispatch: {}
 
-permissions:
-  contents: write   # denki_bid.db を push するため
-
 jobs:
-  update:
+  trigger-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
     steps:
-      - name: チェックアウト
-        uses: actions/checkout@v4
-
-      - name: Python セットアップ
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: 依存インストール（軽量・Playwright不要）
-        run: pip install -r requirements.txt
-
-      - name: データ更新（官公需API・全国／HTTPのみで高速・堅牢。PPI競合や自治体は保持）
-        run: python update.py --fast
-
-      - name: 変更があれば commit & push
+      - name: Render再デプロイ（DBはビルド時生成）
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          if [ -n "$(git status --porcelain denki_bid.db)" ]; then
-            git add denki_bid.db
-            git commit -m "chore: データ自動更新 $(date -u +%Y-%m-%d)"
-            git push
-            echo "更新をpushしました（Renderが自動再デプロイ）"
+          if [ -n "$RENDER_DEPLOY_HOOK_URL" ]; then
+            curl -sf "$RENDER_DEPLOY_HOOK_URL"
+            echo "Renderデプロイを起動しました（ビルド中にDBが再生成されます）"
           else
-            echo "データに変更なし"
+            echo "::error::RENDER_DEPLOY_HOOK_URL が未設定です。"
+            echo "設定手順:"
+            echo "  1. Render ダッシュボード → サービス → Settings → Deploy Hook → URLをコピー"
+            echo "  2. GitHub リポジトリ → Settings → Secrets and variables → Actions → New repository secret"
+            echo "     Name: RENDER_DEPLOY_HOOK_URL  Value: コピーしたURL"
+            exit 1
           fi

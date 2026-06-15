@@ -9,6 +9,5 @@ audit_report.md
 run_daily.sh
 launchd.err.log
 launchd.out.log
-# DBは同梱してデプロイ（プリビルドのデータを配信）するためコミットする。
-# 除外したい場合は次行を有効化:
-# denki_bid.db
+# DBはRenderビルド時に update.py --fast で毎回生成。gitには入れない（83MB→0MB）。
+denki_bid.db
