@@ -179,6 +179,37 @@ table.list .rank { font-weight: 600; color: var(--text-tertiary); text-align: ce
 .cr-reason { font-size: 11.5px; color: var(--danger); text-align: right; max-width: 220px; }
 
 .tag.new { background: #FFE9D6; color: #C2410C; font-weight: 600; }
+.tag.open { background: var(--success-soft); color: var(--success); font-weight: 700; }
+.tag.ptype { background: #E6F0FF; color: #1D4ED8; font-weight: 600; }
+
+/* 締切：今日以降は通常、過去は薄く（終了） */
+.cr-sub .deadline.future { color: var(--danger); font-weight: 600; }
+.cr-sub .deadline.past { color: var(--text-tertiary); font-weight: 400; }
+
+/* 「応募できる」チェックトグル */
+.filterbar .field.check { justify-content: flex-end; }
+.filterbar .field.check .toggle {
+  display: flex; align-items: center; gap: 6px; font-size: 12.5px;
+  color: var(--text-secondary); white-space: nowrap; cursor: pointer;
+}
+/* フィールド見出しの補足（複数可 等） */
+.filterbar .field > span em { font-style: normal; color: var(--text-tertiary); font-size: 10.5px; }
+.filterbar select[multiple] { min-width: 140px; padding: 2px; }
+
+/* 募集中／すべて タブ */
+.tabs { display: flex; gap: 6px; margin: 14px 0 4px; }
+.tabs .tab {
+  font-size: 13px; padding: 6px 14px; border-radius: 8px 8px 0 0;
+  text-decoration: none; color: var(--text-secondary);
+  border: 1px solid var(--border); border-bottom: none; background: var(--bg-hover);
+}
+.tabs .tab.active { background: var(--bg-canvas); color: var(--accent); font-weight: 700; }
+
+/* 終了・本日タグ／終了案件の薄表示 */
+.tag.ended { background: var(--bg-hover); color: var(--text-tertiary); }
+.tag.today { background: #FFE9D6; color: #C2410C; font-weight: 700; }
+.case-row.closed { opacity: .5; }
+.case-row.closed:hover { opacity: 1; }
 
 .match-reasons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .match-tag {

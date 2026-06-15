@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS cases (
     region        TEXT    DEFAULT '',                -- 地方区分（北海道・東北 等）
     prefecture    TEXT    DEFAULT '',                -- 都道府県
     category      TEXT    DEFAULT '',                -- 業種（電気工事 等）
+    procurement_type TEXT DEFAULT '',                -- 調達区分（工事/役務/物品）
     bid_method    TEXT    DEFAULT '',                -- 入札方式（一般競争入札 等）
     announced_date TEXT   DEFAULT '',                -- 公告日（ISO）
     deadline      TEXT    DEFAULT '',                -- 申込締切（ISO）
@@ -54,15 +55,19 @@ CREATE TABLE IF NOT EXISTS cases (
     spec_status   TEXT    DEFAULT 'unknown',         -- 仕様書 取得可否
     spec_reason   TEXT    DEFAULT '',                -- 取れない理由コード（SPEC_REASONS）
     spec_url      TEXT    DEFAULT '',                -- 仕様書URL（取得可のとき）
-    budget        TEXT    DEFAULT '',                -- 予定価格等（任意）
+    budget        TEXT    DEFAULT '',                -- 予定価格等（表示用テキスト・任意）
+    budget_yen    INTEGER DEFAULT 0,                 -- 予定価格（円・数値。金額フィルタ/整列用）
     winner        TEXT    DEFAULT '',                -- 落札者（競合企業分析の核）
     win_price     TEXT    DEFAULT '',                -- 落札価格
+    description   TEXT    DEFAULT '',                -- 案件説明（締切抽出元の自由記述）
     created_at    TEXT    DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_cases_pref     ON cases(prefecture);
 CREATE INDEX IF NOT EXISTS idx_cases_region   ON cases(region);
 CREATE INDEX IF NOT EXISTS idx_cases_category ON cases(category);
 CREATE INDEX IF NOT EXISTS idx_cases_deadline ON cases(deadline);
+-- procurement_type / budget_yen の索引は init_db() のマイグレーション後に作成
+-- （既存DBでは列追加が先に必要なため）。
 
 CREATE TABLE IF NOT EXISTS profile (
     id           INTEGER PRIMARY KEY CHECK (id = 1),  -- 単一行
@@ -121,6 +126,17 @@ def init_db() -> None:
         cols = [r[1] for r in conn.execute("PRAGMA table_info(profile)")]
         if "company" not in cols:
             conn.execute("ALTER TABLE profile ADD COLUMN company TEXT DEFAULT ''")
+        # cases の後付け列をマイグレーション（無ければ追加）
+        case_cols = [r[1] for r in conn.execute("PRAGMA table_info(cases)")]
+        if "description" not in case_cols:
+            conn.execute("ALTER TABLE cases ADD COLUMN description TEXT DEFAULT ''")
+        if "procurement_type" not in case_cols:
+            conn.execute("ALTER TABLE cases ADD COLUMN procurement_type TEXT DEFAULT ''")
+        if "budget_yen" not in case_cols:
+            conn.execute("ALTER TABLE cases ADD COLUMN budget_yen INTEGER DEFAULT 0")
+        # 列追加後に索引を作成（新設列のため SCHEMA からは外してある）
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_proctype ON cases(procurement_type)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_budgetyen ON cases(budget_yen)")
         conn.commit()
 
 
@@ -128,9 +144,9 @@ def upsert_cases(rows: list[dict[str, Any]]) -> int:
     """案件を一括投入。external_id が衝突したら上書き更新。投入件数を返す。"""
     cols = [
         "source", "external_id", "title", "agency", "agency_type",
-        "region", "prefecture", "category", "bid_method", "announced_date",
-        "deadline", "detail_url", "spec_status", "spec_reason", "spec_url", "budget",
-        "winner", "win_price",
+        "region", "prefecture", "category", "procurement_type", "bid_method",
+        "announced_date", "deadline", "detail_url", "spec_status", "spec_reason",
+        "spec_url", "budget", "budget_yen", "winner", "win_price", "description",
     ]
     placeholders = ", ".join(["?"] * len(cols))
     updates = ", ".join(f"{c}=excluded.{c}" for c in cols if c != "external_id")
@@ -138,19 +154,43 @@ def upsert_cases(rows: list[dict[str, Any]]) -> int:
         f"INSERT INTO cases ({', '.join(cols)}) VALUES ({placeholders}) "
         f"ON CONFLICT(external_id) DO UPDATE SET {updates}"
     )
+
+    def _val(r: dict[str, Any], c: str) -> Any:
+        # budget_yen は数値列。未設定や非数値は 0 に正規化する。
+        if c == "budget_yen":
+            v = r.get(c, 0)
+            try:
+                return int(v) if v not in ("", None) else 0
+            except (TypeError, ValueError):
+                return 0
+        return r.get(c, "")
+
     with _connect() as conn:
-        conn.executemany(sql, [tuple(r.get(c, "") for c in cols) for r in rows])
+        conn.executemany(sql, [tuple(_val(r, c) for c in cols) for r in rows])
         conn.commit()
     return len(rows)
+
+
+def _as_list(v: Any) -> list[str]:
+    """str / list / None を、空要素を除いた文字列リストに正規化する。"""
+    if v is None:
+        return []
+    if isinstance(v, str):
+        return [v] if v.strip() else []
+    return [str(x).strip() for x in v if str(x).strip()]
 
 
 def list_cases(
     *,
     region: str | None = None,
     prefecture: str | None = None,
-    category: str | None = None,
-    bid_method: str | None = None,
+    category: str | list[str] | None = None,
+    procurement_type: str | list[str] | None = None,
+    bid_method: str | list[str] | None = None,
     spec_status: str | None = None,
+    budget_min: int | None = None,
+    open_only: bool = False,
+    hide_closed: bool = False,
     q: str = "",
     sort: str = "deadline",
     limit: int = 200,
@@ -159,6 +199,11 @@ def list_cases(
     """条件で案件を絞り込む（NJSS風の段階フィルタ）。
 
     都道府県が指定されればそれを優先、無ければ地方区分で絞る。
+      - category / procurement_type / bid_method: str でも list でも可（list は OR）
+      - budget_min: 予定価格(円)がこれ以上（1000万＝10000000 等）
+      - open_only: 締切が今日以降の「今応募できる」案件のみ
+      - hide_closed: 締切が過去の「終了」案件を隠す（締切不明・今後分は残す）
+      - q: 空白/カンマ区切りで複数キーワード可（いずれか一致＝OR）
     """
     where: list[str] = []
     params: list[Any] = []
@@ -170,24 +215,40 @@ def list_cases(
         where.append("region = ?")
         params.append(region)
 
-    if category:
-        where.append("category = ?")
-        params.append(category)
-    if bid_method:
-        where.append("bid_method = ?")
-        params.append(bid_method)
+    # 業種・区分・入札方式は複数選択（OR）に対応
+    for col, val in (("category", category), ("procurement_type", procurement_type),
+                     ("bid_method", bid_method)):
+        vals = _as_list(val)
+        if vals:
+            where.append(f"{col} IN (%s)" % ",".join("?" * len(vals)))
+            params.extend(vals)
+
     if spec_status:
         where.append("spec_status = ?")
         params.append(spec_status)
-    if q:
-        where.append("(title LIKE ? OR agency LIKE ?)")
-        params.extend([f"%{q}%", f"%{q}%"])
+    if budget_min:
+        where.append("budget_yen >= ?")
+        params.append(int(budget_min))
+    if open_only:
+        # 締切が判明していて、かつ今日以降のものだけ＝実際に応募できる案件
+        where.append("deadline != '' AND deadline >= date('now', 'localtime')")
+    if hide_closed:
+        # 締切が過去のもの＝終了を隠す。締切不明('')や今後分は残す。
+        where.append("(deadline = '' OR deadline >= date('now', 'localtime'))")
+    # キーワードは空白/カンマ区切りで複数可。各語が title/agency いずれかに一致（語間OR）
+    terms = [t for t in q.replace("，", ",").replace("、", ",").replace(",", " ").split() if t]
+    if terms:
+        ors = " OR ".join("(title LIKE ? OR agency LIKE ?)" for _ in terms)
+        where.append(f"({ors})")
+        for t in terms:
+            params.extend([f"%{t}%", f"%{t}%"])
 
     clause = ("WHERE " + " AND ".join(where)) if where else ""
     # 締切が空文字の案件は末尾に回す
     order = {
         "deadline": "CASE WHEN deadline = '' THEN 1 ELSE 0 END, deadline ASC",
         "announced": "announced_date DESC",
+        "budget": "budget_yen DESC",
     }.get(sort, "deadline ASC")
 
     sql = f"SELECT * FROM cases {clause} ORDER BY {order} LIMIT ? OFFSET ?"
@@ -204,7 +265,8 @@ def get_case(case_id: int) -> dict[str, Any] | None:
 
 def distinct_values(column: str) -> list[str]:
     """フィルタUIの候補値（指定カラムの非空ユニーク値）。"""
-    allowed = {"category", "bid_method", "prefecture", "region", "agency_type"}
+    allowed = {"category", "procurement_type", "bid_method", "prefecture",
+               "region", "agency_type"}
     if column not in allowed:
         raise ValueError(f"許可されていないカラム: {column}")
     sql = f"SELECT DISTINCT {column} FROM cases WHERE {column} != '' ORDER BY {column}"

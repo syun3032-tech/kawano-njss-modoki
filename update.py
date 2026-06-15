@@ -38,9 +38,13 @@ def run(reset: bool = False, koukai_instances: list[str] | None = None,
     #   APIが落ちている時に既存データを消さない。fast時はAPI分だけ入替（PPI/自治体は保持）。
     import kkj_scraper
     try:
-        rows = kkj_scraper.fetch(lg_codes=kkj_scraper.KANSAI_CODES)  # 関西を厚く
-        rows += kkj_scraper.fetch()                                  # 全国
-        rows = [r for r in rows if r.get("title")]
+        # 関西は電気の工事＋役務を横断で厚く取る（役務=保安管理/保守点検の取りこぼし防止）
+        rows = kkj_scraper.fetch_kansai_electrical()
+        # 全国は電気系クエリを横断（受変電/照明/太陽光/保安管理 等）で取りこぼし防止。
+        # 旧実装は単一クエリ"電気工事"・Count1000で頭打ち→近畿以外を大量に落としていた。
+        rows += kkj_scraper.fetch_nationwide_electrical()
+        # external_id で重複排除（関西電気と全国の重なりを除く）
+        rows = list({r["external_id"]: r for r in rows if r.get("title")}.values())
         if rows:
             if fast:
                 db.clear_cases("官公需API")  # 成功時のみ古いAPI行を入替

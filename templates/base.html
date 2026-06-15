@@ -12,6 +12,7 @@
     <div class="logo"><span class="spark">⚡</span> Kawanoさん<br>NJSSモドキ</div>
     <nav>
       <a href="{{ url_for('cases') }}" class="{{ 'active' if request.endpoint == 'cases' }}">案件を探す</a>
+      <a href="{{ url_for('cases', open=1, budget_min=10000000, sort='budget') }}">💡今応募できる1000万↑</a>
       <a href="{{ url_for('cases', new=1) }}">新着</a>
       <a href="{{ url_for('matches') }}" class="{{ 'active' if request.endpoint == 'matches' }}">マッチ案件</a>
       <a href="{{ url_for('competitors') }}" class="{{ 'active' if request.endpoint in ['competitors','competitor_detail'] }}">競合企業</a>

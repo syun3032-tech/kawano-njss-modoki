@@ -22,9 +22,19 @@ from flask import Flask, abort, flash, jsonify, redirect, render_template, reque
 import db
 from regions import ALL_PREFECTURES, REGIONS, prefectures_in
 
-# 公告日がこの日付以降なら「新着」とみなす（直近30日）
+# 公告日がこの日付以降なら「新着」とみなす（直近7日）
 def _new_threshold() -> str:
-    return (date.today() - timedelta(days=30)).isoformat()
+    return (date.today() - timedelta(days=7)).isoformat()
+
+# 予定価格の下限フィルタの選択肢（label, 円値）。本文から拾えた予定価格に対して効く。
+BUDGET_OPTIONS = [
+    ("指定なし", 0),
+    ("500万円以上", 5_000_000),
+    ("1000万円以上", 10_000_000),
+    ("3000万円以上", 30_000_000),
+    ("5000万円以上", 50_000_000),
+    ("1億円以上", 100_000_000),
+]
 
 # 申請ステータスのバッジ色分け（テンプレートで使用）
 STATUS_CLASS = {
@@ -71,11 +81,25 @@ def cases():
     else:
         region = request.args.get("region", "").strip()
     prefecture = request.args.get("prefecture", "").strip()
-    category = request.args.get("category", "").strip()
-    bid_method = request.args.get("bid_method", "").strip()
+    # 業種・区分・入札方式は複数選択（チェック/multiple select）に対応
+    category = [c for c in request.args.getlist("category") if c.strip()]
+    procurement_type = [p for p in request.args.getlist("procurement_type") if p.strip()]
+    bid_method = [b for b in request.args.getlist("bid_method") if b.strip()]
     spec_status = request.args.get("spec_status", "").strip()
     q = request.args.get("q", "").strip()
-    new_only = request.args.get("new") == "1"
+    # 新着期間: ""=指定なし / today=本日公告 / week=直近7日。nav の new=1 は week 扱い。
+    fresh = request.args.get("fresh", "").strip()
+    if request.args.get("new") == "1" and not fresh:
+        fresh = "week"
+    new_only = fresh in ("today", "week")
+    open_only = request.args.get("open") == "1"
+    # 終了（締切が過去）案件を表示するか。既定は隠す（closed=1 で表示）。
+    show_closed = request.args.get("closed") == "1"
+    # 金額下限（円）。万円ではなく円で受ける（フォームの選択肢は円値）
+    try:
+        budget_min = int(request.args.get("budget_min", "") or 0)
+    except ValueError:
+        budget_min = 0
     sort = request.args.get("sort", "announced" if new_only else "deadline").strip()
 
     # 地方が選ばれていて都道府県がその地方に属さない場合は都道府県条件を無視
@@ -86,14 +110,24 @@ def cases():
         region=region or None,
         prefecture=prefecture or None,
         category=category or None,
+        procurement_type=procurement_type or None,
         bid_method=bid_method or None,
         spec_status=spec_status or None,
+        budget_min=budget_min or None,
+        open_only=open_only,
+        hide_closed=not show_closed,
         q=q,
         sort=sort,
     )
     threshold = _new_threshold()
-    if new_only:
+    today_iso = date.today().isoformat()
+    if fresh == "today":
+        rows = [r for r in rows if r.get("announced_date") == today_iso]
+    elif fresh == "week":
         rows = [r for r in rows if r.get("announced_date") and r["announced_date"] >= threshold]
+
+    # 終了タブのリンク用に、closed 以外の現在のクエリを保持
+    base_args = {k: request.args.getlist(k) for k in request.args if k != "closed"}
 
     return render_template(
         "cases.html",
@@ -102,14 +136,21 @@ def cases():
         # 選択中の地方に応じた都道府県候補（未選択なら全国）
         pref_options=prefectures_in(region) if region else [],
         categories=db.distinct_values("category"),
+        procurement_types=db.distinct_values("procurement_type"),
         bid_methods=db.distinct_values("bid_method"),
+        budget_options=BUDGET_OPTIONS,
         spec_reasons=db.SPEC_REASONS,
         total=db.count_cases(),
         new_threshold=threshold,
+        today=date.today().isoformat(),
+        show_closed=show_closed,
+        base_args=base_args,
         selected={
             "region": region, "prefecture": prefecture, "category": category,
-            "bid_method": bid_method, "spec_status": spec_status, "q": q, "sort": sort,
-            "new": new_only,
+            "procurement_type": procurement_type, "bid_method": bid_method,
+            "spec_status": spec_status, "budget_min": budget_min,
+            "open": open_only, "q": q, "sort": sort, "new": new_only,
+            "fresh": fresh,
         },
     )
 
