@@ -8,7 +8,7 @@
     <h1>{{ view.title }}</h1>
     <p>{{ view.desc }}</p>
   </div>
-  <div class="hero-count"><strong>{{ rows|length }}</strong><span>件 表示中</span></div>
+  <div class="hero-count"><strong>{{ '{:,}'.format(pg.matched) }}</strong><span>件 該当</span></div>
 </div>
 
 <form class="filterbar" method="get" action="{{ url_for('cases') }}">
@@ -109,8 +109,12 @@
 </div>
 
 <div class="result-head">
-  <span class="count">{{ rows|length }} 件</span>
-  <span class="muted">/ 全 {{ total }} 件</span>
+  {% if pg.matched %}
+    <span class="count">{{ '{:,}'.format(pg.start) }}–{{ '{:,}'.format(pg.end) }} 件目</span>
+    <span class="muted">/ 該当 {{ '{:,}'.format(pg.matched) }} 件</span>
+  {% else %}
+    <span class="count">0 件</span>
+  {% endif %}
   {% if not show_closed %}<span class="muted">（終了は非表示）</span>{% endif %}
   <a class="btn" style="margin-left:auto" href="{{ url_for('export_csv') }}">CSVダウンロード ↓</a>
 </div>
@@ -150,6 +154,22 @@
   </a>
   {% endfor %}
 </div>
+
+{% if pg.total_pages > 1 %}
+<nav class="pager">
+  {% if pg.has_prev %}
+    <a class="btn" href="{{ url_for('cases', page=pg.page - 1, **page_args) }}">← 前の200件</a>
+  {% else %}
+    <span class="btn disabled">← 前の200件</span>
+  {% endif %}
+  <span class="pager-mid">{{ pg.page }} / {{ pg.total_pages }} ページ</span>
+  {% if pg.has_next %}
+    <a class="btn primary" href="{{ url_for('cases', page=pg.page + 1, **page_args) }}">次の200件 →</a>
+  {% else %}
+    <span class="btn disabled">次の200件 →</span>
+  {% endif %}
+</nav>
+{% endif %}
 {% else %}
 <p class="empty">条件に合う案件がありません。フィルタを緩めてみてください。</p>
 {% endif %}

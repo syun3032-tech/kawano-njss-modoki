@@ -102,12 +102,23 @@ def cases():
     except ValueError:
         budget_min = 0
     sort = request.args.get("sort", "announced" if new_only else "deadline").strip()
+    # ページング（1ページ200件）。?page=2 で次の200件。
+    try:
+        page = max(1, int(request.args.get("page", "1") or 1))
+    except ValueError:
+        page = 1
+    per_page = 200
 
     # 地方が選ばれていて都道府県がその地方に属さない場合は都道府県条件を無視
     if region and prefecture and prefecture not in prefectures_in(region):
         prefecture = ""
 
-    rows = db.list_cases(
+    # 新着フィルタはSQL側で行う（後フィルタだと件数が不正確＆200件上限の影響を受けるため）
+    threshold = _new_threshold()
+    today_iso = date.today().isoformat()
+    announced_after = today_iso if fresh == "today" else (threshold if fresh == "week" else None)
+
+    filters = dict(
         region=region or None,
         prefecture=prefecture or None,
         category=category or None,
@@ -118,17 +129,24 @@ def cases():
         open_only=open_only,
         hide_closed=not show_closed,
         q=q,
-        sort=sort,
+        announced_after=announced_after,
     )
-    threshold = _new_threshold()
-    today_iso = date.today().isoformat()
-    if fresh == "today":
-        rows = [r for r in rows if r.get("announced_date") == today_iso]
-    elif fresh == "week":
-        rows = [r for r in rows if r.get("announced_date") and r["announced_date"] >= threshold]
+    matched = db.count_list_cases(**filters)          # 該当件数（上限なしの実数）
+    total_pages = max(1, (matched + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    rows = db.list_cases(sort=sort, limit=per_page, offset=(page - 1) * per_page, **filters)
 
-    # 終了タブのリンク用に、closed 以外の現在のクエリを保持
+    # ページング表示用（1始まりの「N〜M件目」）
+    pg = {
+        "page": page, "per_page": per_page, "total_pages": total_pages,
+        "matched": matched,
+        "start": (0 if matched == 0 else (page - 1) * per_page + 1),
+        "end": min(page * per_page, matched),
+        "has_prev": page > 1, "has_next": page < total_pages,
+    }
+    # 終了タブ／ページャのリンク用に現在のクエリを保持（各々で上書きするキーは除く）
     base_args = {k: request.args.getlist(k) for k in request.args if k != "closed"}
+    page_args = {k: request.args.getlist(k) for k in request.args if k != "page"}
 
     # 画面の文脈ヘッダー（どの絞り込みで見ているかを一目で分かるように）。
     # サイドバーのどの項目を選んでいるか（nav_active）も併せて決める。
@@ -174,6 +192,8 @@ def cases():
         today=date.today().isoformat(),
         show_closed=show_closed,
         base_args=base_args,
+        page_args=page_args,
+        pg=pg,
         selected={
             "region": region, "prefecture": prefecture, "category": category,
             "procurement_type": procurement_type, "bid_method": bid_method,

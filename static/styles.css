@@ -325,6 +325,12 @@ table.list .rank { font-weight: 600; color: var(--text-tertiary); text-align: ce
 .lead { margin: -8px 0 16px; color: var(--text-secondary); }
 .link { color: var(--accent); }
 
+/* ページャ（200件ごと） */
+.pager { display: flex; align-items: center; justify-content: center; gap: 16px;
+  margin: 24px 0 8px; }
+.pager-mid { font-size: 13px; color: var(--text-secondary); }
+.btn.disabled { opacity: .4; cursor: default; pointer-events: none; }
+
 /* 応募ガイド */
 .guide-box { margin-top: 26px; padding: 20px 22px; border: 2px solid var(--accent);
   border-radius: 10px; background: #f0f5ff; max-width: 880px; }

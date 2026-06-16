@@ -182,7 +182,7 @@ def _as_list(v: Any) -> list[str]:
     return [str(x).strip() for x in v if str(x).strip()]
 
 
-def list_cases(
+def _build_case_filter(
     *,
     region: str | None = None,
     prefecture: str | None = None,
@@ -194,19 +194,9 @@ def list_cases(
     open_only: bool = False,
     hide_closed: bool = False,
     q: str = "",
-    sort: str = "deadline",
-    limit: int = 200,
-    offset: int = 0,
-) -> list[dict[str, Any]]:
-    """条件で案件を絞り込む（NJSS風の段階フィルタ）。
-
-    都道府県が指定されればそれを優先、無ければ地方区分で絞る。
-      - category / procurement_type / bid_method: str でも list でも可（list は OR）
-      - budget_min: 予定価格(円)がこれ以上（1000万＝10000000 等）
-      - open_only: 締切が今日以降の「今応募できる」案件のみ
-      - hide_closed: 締切が過去の「終了」案件を隠す（締切不明・今後分は残す）
-      - q: 空白/カンマ区切りで複数キーワード可（いずれか一致＝OR）
-    """
+    announced_after: str | None = None,
+) -> tuple[str, list[Any]]:
+    """絞り込み条件から WHERE句とパラメータを組み立てる（list_cases と件数で共用）。"""
     where: list[str] = []
     params: list[Any] = []
 
@@ -237,6 +227,10 @@ def list_cases(
     if hide_closed:
         # 締切が過去のもの＝終了を隠す。締切不明('')や今後分は残す。
         where.append("(deadline = '' OR deadline >= date('now', 'localtime'))")
+    if announced_after:
+        # 新着フィルタ（公告日がこの日以降）。SQL側で行うことで件数も正確・上限の影響を受けない。
+        where.append("announced_date != '' AND announced_date >= ?")
+        params.append(announced_after)
     # キーワードは空白/カンマ区切りで複数可。各語が title/agency いずれかに一致（語間OR）
     terms = [t for t in q.replace("，", ",").replace("、", ",").replace(",", " ").split() if t]
     if terms:
@@ -246,6 +240,52 @@ def list_cases(
             params.extend([f"%{t}%", f"%{t}%"])
 
     clause = ("WHERE " + " AND ".join(where)) if where else ""
+    return clause, params
+
+
+def count_list_cases(**filters: Any) -> int:
+    """list_cases と同じ絞り込み条件に該当する件数（上限なしの実数）。"""
+    # sort/limit/offset は件数に無関係なので除外
+    for k in ("sort", "limit", "offset"):
+        filters.pop(k, None)
+    clause, params = _build_case_filter(**filters)
+    with _connect() as conn:
+        return conn.execute(f"SELECT COUNT(*) FROM cases {clause}", params).fetchone()[0]
+
+
+def list_cases(
+    *,
+    region: str | None = None,
+    prefecture: str | None = None,
+    category: str | list[str] | None = None,
+    procurement_type: str | list[str] | None = None,
+    bid_method: str | list[str] | None = None,
+    spec_status: str | None = None,
+    budget_min: int | None = None,
+    open_only: bool = False,
+    hide_closed: bool = False,
+    q: str = "",
+    announced_after: str | None = None,
+    sort: str = "deadline",
+    limit: int = 200,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    """条件で案件を絞り込む（NJSS風の段階フィルタ）。
+
+    都道府県が指定されればそれを優先、無ければ地方区分で絞る。
+      - category / procurement_type / bid_method: str でも list でも可（list は OR）
+      - budget_min: 予定価格(円)がこれ以上（1000万＝10000000 等）
+      - open_only: 締切が今日以降の「今応募できる」案件のみ
+      - hide_closed: 締切が過去の「終了」案件を隠す（締切不明・今後分は残す）
+      - announced_after: 公告日がこの日以降（新着フィルタ）
+      - q: 空白/カンマ区切りで複数キーワード可（いずれか一致＝OR）
+    """
+    clause, params = _build_case_filter(
+        region=region, prefecture=prefecture, category=category,
+        procurement_type=procurement_type, bid_method=bid_method,
+        spec_status=spec_status, budget_min=budget_min, open_only=open_only,
+        hide_closed=hide_closed, q=q, announced_after=announced_after,
+    )
     # 締切が空文字の案件は末尾に回す
     order = {
         "deadline": "CASE WHEN deadline = '' THEN 1 ELSE 0 END, deadline ASC",
@@ -254,7 +294,7 @@ def list_cases(
     }.get(sort, "deadline ASC")
 
     sql = f"SELECT * FROM cases {clause} ORDER BY {order} LIMIT ? OFFSET ?"
-    params.extend([limit, offset])
+    params = list(params) + [limit, offset]
     with _connect() as conn:
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
