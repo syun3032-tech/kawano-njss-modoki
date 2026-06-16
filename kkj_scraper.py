@@ -23,7 +23,9 @@ import xml.etree.ElementTree as ET
 import db
 from regions import region_of
 
-API_URL = "http://www.kkj.go.jp/api/"
+# https を使う（http はネットワークによってはタイムアウト/遅延しやすく、Renderの
+# ビルド時間（約15分上限）を圧迫してデプロイ失敗の原因になっていた）。
+API_URL = "https://www.kkj.go.jp/api/"
 
 # 都道府県名 → JIS X0401 コード（LG_Code 用）。関西を厚くする時に使う。
 PREF_CODE = {
@@ -407,6 +409,26 @@ def _fetch_retry(query: str, category: str,
     return []
 
 
+def _fetch_many(specs: list[tuple[str, str, list[str] | None]],
+                max_workers: int = 8) -> list[dict]:
+    """(query, category, lg_codes) のリストを並列取得し external_id で一意化して返す。
+
+    各クエリは独立かつ I/O 待ちが大半なので、スレッドプールで同時実行する。
+    逐次だと全国20クエリ×数十秒＝10分超でRenderのビルド時間を超過しデプロイ失敗していた。
+    並列化で数分に短縮する。失敗クエリは _fetch_retry が [] を返すので全体は止まらない。
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    seen: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        results = ex.map(lambda s: _fetch_retry(query=s[0], category=s[1], lg_codes=s[2]), specs)
+        for rows in results:
+            for r in rows:
+                if r.get("title") and r["external_id"] not in seen:
+                    seen[r["external_id"]] = r
+    return list(seen.values())
+
+
 def fetch_nationwide_electrical() -> list[dict]:
     """全国の電気案件を複数クエリ横断で取得：工事(Cat2)=電気スコープ全語＋役務(Cat3)=電気役務。
 
@@ -415,13 +437,9 @@ def fetch_nationwide_electrical() -> list[dict]:
     関西と同じ要領で電気系クエリを横断し、external_id で一意化して取りこぼしを無くす。
     ※役務は非電気の氾濫を避けるため電気役務(ELEC_SERVICE_QUERIES)に限定する。
     """
-    seen: dict[str, dict] = {}
-    for cat, queries in (("2", ELEC_QUERIES), ("3", ELEC_SERVICE_QUERIES)):
-        for q in queries:
-            for r in _fetch_retry(query=q, category=cat):  # lg_codes 無し=全国
-                if r.get("title") and r["external_id"] not in seen:
-                    seen[r["external_id"]] = r
-    return list(seen.values())
+    specs = ([(q, "2", None) for q in ELEC_QUERIES]
+             + [(q, "3", None) for q in ELEC_SERVICE_QUERIES])
+    return _fetch_many(specs)
 
 
 def fetch_kansai_targets(lg_codes: list[str] | None = None) -> list[dict]:
@@ -430,16 +448,9 @@ def fetch_kansai_targets(lg_codes: list[str] | None = None) -> list[dict]:
     1案件は external_id（KKJ-Key）で一意化。役務は業種を広げて取りこぼしを無くす。
     """
     codes = lg_codes or KANSAI_CODES
-    seen: dict[str, dict] = {}
-    for cat, queries in (("2", ELEC_QUERIES), ("3", SERVICE_QUERIES)):
-        for q in queries:
-            try:
-                for r in fetch(query=q, category=cat, lg_codes=codes):
-                    if r.get("title") and r["external_id"] not in seen:
-                        seen[r["external_id"]] = r
-            except Exception:  # noqa: BLE001 — 1クエリ失敗で全体を止めない
-                continue
-    return list(seen.values())
+    specs = ([(q, "2", codes) for q in ELEC_QUERIES]
+             + [(q, "3", codes) for q in SERVICE_QUERIES])
+    return _fetch_many(specs)
 
 
 # 後方互換エイリアス（update.py 等の既存呼び出し用）
