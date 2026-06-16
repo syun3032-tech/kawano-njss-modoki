@@ -23,6 +23,10 @@ import db
 import ppi_scraper
 import seed_data
 
+# --fast（毎日の自動更新／Renderビルド時）で、これ未満なら生成失敗とみなしデプロイ中止。
+# 通常は官公需APIだけで数千件入るので、500未満はAPI障害等の異常値。
+FAST_MIN_CASES = 500
+
 
 def run(reset: bool = False, koukai_instances: list[str] | None = None,
         with_samples: bool = False, fast: bool = False) -> None:
@@ -62,7 +66,15 @@ def run(reset: bool = False, koukai_instances: list[str] | None = None,
             print(f"[監視機関リスト] {agency_import.load()} 機関")
         except Exception as e:  # noqa: BLE001
             print(f"[監視機関リスト] 失敗: {str(e)[:70]}")
-        print(f"=== 高速更新完了: 案件 {db.count_cases()} 件 / 監視機関 {db.count_agencies()} 機関 ===")
+        n_cases = db.count_cases()
+        print(f"=== 高速更新完了: 案件 {n_cases} 件 / 監視機関 {db.count_agencies()} 機関 ===")
+        # 【安全弁】案件が極端に少ない＝官公需APIが落ちていた等で生成失敗。
+        # この状態でデプロイすると「空っぽのサイト」が公開されてしまうため、
+        # 非0終了でビルドを止める→Renderは直前の正常デプロイを維持する。
+        if n_cases < FAST_MIN_CASES:
+            print(f"[安全弁] 案件 {n_cases} 件は下限 {FAST_MIN_CASES} 未満。"
+                  "データ生成に失敗とみなしビルドを中止（前回の正常デプロイを維持）。")
+            sys.exit(1)
         return
 
     # 1) 自治体の電気工事（実データ・個別システム）— 京都府・愛知県・堺市(大阪府)

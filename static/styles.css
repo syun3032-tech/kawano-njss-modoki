@@ -70,6 +70,28 @@ h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 16p
 .topbar { margin-bottom: 18px; }
 .topbar .crumb { font-size: 12.5px; color: var(--text-tertiary); }
 
+/* ---- 文脈ヘッダー（どの絞り込みで見ているかを明示） ---- */
+.hero { display: flex; align-items: center; gap: 16px; margin-bottom: 18px;
+  padding: 18px 22px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--bg-subtle); }
+.hero-icon { font-size: 30px; line-height: 1; flex: 0 0 auto; }
+.hero-text { flex: 1 1 auto; min-width: 0; }
+.hero-text h1 { margin: 0; font-size: 21px; }
+.hero-text p { margin: 4px 0 0; font-size: 13px; color: var(--text-secondary); }
+.hero-count { flex: 0 0 auto; text-align: center; padding-left: 16px;
+  border-left: 1px solid var(--border); }
+.hero-count strong { display: block; font-size: 24px; color: var(--accent); line-height: 1.1; }
+.hero-count span { font-size: 11.5px; color: var(--text-secondary); }
+/* 文脈ごとの色分け（瞬時に「別の画面に来た」と分かるように） */
+.hero-budget { background: #fff7e6; border-color: #f0c36d; }
+.hero-budget .hero-count strong { color: #b4690e; }
+.hero-new { background: #e9f6ee; border-color: #8fd0a6; }
+.hero-new .hero-count strong { color: #1f8f4d; }
+@media (max-width: 560px) {
+  .hero { flex-wrap: wrap; gap: 10px; }
+  .hero-count { border-left: none; padding-left: 0; text-align: left; }
+}
+
 .flash { padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; font-size: 13.5px; }
 .flash.ok { background: var(--success-soft); color: var(--success); }
 .flash.error { background: var(--danger-soft); color: var(--danger); }

@@ -2,11 +2,14 @@
 {% block title %}案件を探す — 電気入札サーチ{% endblock %}
 
 {% block content %}
-<div class="topbar"><h1>
-  {%- if selected.fresh == 'today' %}本日の新着案件
-  {%- elif selected.fresh == 'week' %}新着案件（直近1週間）
-  {%- else %}案件を探す{% endif %}
-</h1></div>
+<div class="hero hero-{{ nav_active }}">
+  <div class="hero-icon">{{ view.icon }}</div>
+  <div class="hero-text">
+    <h1>{{ view.title }}</h1>
+    <p>{{ view.desc }}</p>
+  </div>
+  <div class="hero-count"><strong>{{ rows|length }}</strong><span>件 表示中</span></div>
+</div>
 
 <form class="filterbar" method="get" action="{{ url_for('cases') }}">
   <label class="field">

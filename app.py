@@ -130,8 +130,36 @@ def cases():
     # 終了タブのリンク用に、closed 以外の現在のクエリを保持
     base_args = {k: request.args.getlist(k) for k in request.args if k != "closed"}
 
+    # 画面の文脈ヘッダー（どの絞り込みで見ているかを一目で分かるように）。
+    # サイドバーのどの項目を選んでいるか（nav_active）も併せて決める。
+    if budget_min > 0:
+        man = f"{budget_min // 10000:,}"
+        view = {
+            "icon": "💡",
+            "title": (f"今応募できる {man}万円以上の案件" if open_only
+                      else f"{man}万円以上の案件"),
+            "desc": "予定価格の高い順に表示中。" + (
+                "締切が今日以降の電気工事案件にしぼっています。" if open_only
+                else "予定価格が分かっている案件のみ対象です。"),
+        }
+        nav_active = "budget"
+    elif fresh == "today":
+        view = {"icon": "🆕", "title": "本日の新着案件",
+                "desc": "今日公告された電気工事案件です。"}
+        nav_active = "new"
+    elif fresh == "week":
+        view = {"icon": "🆕", "title": "新着案件（直近1週間）",
+                "desc": "直近7日間に公告された電気工事案件です。"}
+        nav_active = "new"
+    else:
+        view = {"icon": "🔎", "title": "案件を探す",
+                "desc": "地方・都道府県・業種・予定価格などで絞り込めます。"}
+        nav_active = "cases"
+
     return render_template(
         "cases.html",
+        view=view,
+        nav_active=nav_active,
         rows=rows,
         regions=REGIONS,
         # 選択中の地方に応じた都道府県候補（未選択なら全国）

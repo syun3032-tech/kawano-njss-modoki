@@ -14,7 +14,9 @@ NJSS無双君 が Supabase を必要とするのに対し、本ツールは
 
 from __future__ import annotations
 
+import re
 import sqlite3
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -309,12 +311,17 @@ def count_agencies() -> int:
         return conn.execute("SELECT COUNT(*) FROM agencies").fetchone()[0]
 
 
+@lru_cache(maxsize=4096)
 def find_agency_for_case(agency_name: str) -> dict[str, Any] | None:
     """案件の発注機関名から agencies テーブルの機関情報を探す。
 
     官公需APIの形式 "大阪府吹田市" → agencies "吹田市役所" のようなマッチを行う。
+    案件詳細を開くたびに呼ばれるため lru_cache で結果を再利用する（データは
+    再デプロイ時のみ変わる＝プロセス再起動でキャッシュも自然に更新される）。
+
+    誤マッチ防止: 短い汎用キーワード（2〜3文字）での当て推量は誤った発注機関＝
+    誤った入札ポータルへの誘導につながるため、段階4は4文字以上のときだけ使う。
     """
-    import re
     if not agency_name:
         return None
 
@@ -346,9 +353,9 @@ def find_agency_for_case(agency_name: str) -> dict[str, Any] | None:
             if row:
                 return dict(row)
 
-        # 4) 省庁名の先頭キーワードでマッチ
-        keyword = agency_name.split("／")[0].split(" ")[0][:6]
-        if len(keyword) >= 2:
+        # 4) 省庁名の先頭キーワードでマッチ（4文字以上のときのみ＝誤マッチ防止）
+        keyword = agency_name.split("／")[0].split(" ")[0][:8]
+        if len(keyword) >= 4:
             row = conn.execute(
                 "SELECT * FROM agencies WHERE name LIKE ? ORDER BY njss_count DESC LIMIT 1",
                 (f"%{keyword}%",),
