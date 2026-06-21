@@ -60,6 +60,10 @@ _ELEC_BID_RE = re.compile(r"電子入札|電子調達システム")
 # 当方ToDoが網羅すべき頻出要件（PDFにあるのにToDoに無ければ漏れ＝警告）
 _HOSHO_RE = re.compile(r"入札保証金")
 _UCHIWAKE_RE = re.compile(r"内訳書")
+# 「電気工事の許可/格付を要求」シグナル。建築一式が定型リストに混在しても、これがあれば
+# 当方の「電気工事業」断定は正しい（明石受変電工事の誤検知対策）。
+_ELEC_LICENSE_CTX_RE = re.compile(
+    r"電気工事(に係る|の|における)?[^。]{0,12}(格付|等級|格別|許可|主任技術者|資格)")
 
 
 def extract_pdf_text(url: str, timeout: int = 25) -> str:
@@ -102,6 +106,7 @@ def ground_truth(pdf_text: str) -> dict:
         "elec_bid": bool(_ELEC_BID_RE.search(t)),
         "needs_hosho": bool(_HOSHO_RE.search(t)),
         "needs_uchiwake": bool(_UCHIWAKE_RE.search(t)),
+        "elec_license_ctx": bool(_ELEC_LICENSE_CTX_RE.search(t)),
         "chars": len(t),
     }
 
@@ -139,9 +144,9 @@ def audit_case(case: dict, pdf_text: str) -> dict:
                        "当方は役務で経審不要だが、公告に経営事項審査の記載あり（建設工事の可能性）"))
     # 3) 建設業許可の業種ズレ: 当方が断定した業種が、公告記載の業種と一致しない
     if our_lic and gt["licenses"]:
-        # 当方の業種名(例 電気工事業/管工事業/造園工事業)が公告の業種群に含まれるか
         norm = our_lic.replace("証明書", "")
-        if not any(name in our_lic or name in norm for name in gt["licenses"]):
+        elec_ok = "電気工事業" in our_lic and gt["elec_license_ctx"]
+        if not elec_ok and not any(name in our_lic or name in norm for name in gt["licenses"]):
             issues.append(("許可業種ズレ",
                            f"当方=「{our_lic}」 / 公告記載=「{', '.join(gt['licenses'])}」"))
     # 4) 網羅性: 公告にある頻出要件を当方ToDoが漏らしていないか
