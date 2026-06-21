@@ -12,3 +12,8 @@ launchd.out.log
 # DBはGitHub Actions(--full)で生成しReleaseに置く。gitには入れない（数十MB）。
 denki_bid.db
 denki_bid.db.gz
+
+# APIキー等の秘密（絶対にコミットしない）
+.env
+.env.*
+*.key
