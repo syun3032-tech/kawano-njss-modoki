@@ -57,6 +57,9 @@ _LICENSE_PATTERNS = [
 ]
 _PAPER_RE = re.compile(r"紙入札|紙による入札|入札書を持参|郵送による入札")
 _ELEC_BID_RE = re.compile(r"電子入札|電子調達システム")
+# 当方ToDoが網羅すべき頻出要件（PDFにあるのにToDoに無ければ漏れ＝警告）
+_HOSHO_RE = re.compile(r"入札保証金")
+_UCHIWAKE_RE = re.compile(r"内訳書")
 
 
 def extract_pdf_text(url: str, timeout: int = 25) -> str:
@@ -97,6 +100,8 @@ def ground_truth(pdf_text: str) -> dict:
         "licenses": licenses,
         "paper_bid": bool(_PAPER_RE.search(t)),
         "elec_bid": bool(_ELEC_BID_RE.search(t)),
+        "needs_hosho": bool(_HOSHO_RE.search(t)),
+        "needs_uchiwake": bool(_UCHIWAKE_RE.search(t)),
         "chars": len(t),
     }
 
@@ -115,7 +120,8 @@ def audit_case(case: dict, pdf_text: str) -> dict:
     """1案件: 当方の生成 vs PDFの事実 を突き合わせ、不一致(issues)を返す。"""
     req = procurement.application_requirements(case)
     kind = req["procurement_kind"]
-    requires_keishin = any("経営事項審査" in d["label"] for d in req["documents"])
+    labels = " ".join(d["label"] for d in req["documents"])
+    requires_keishin = "経営事項審査" in labels
     our_lic = _our_license(req)
     gt = ground_truth(pdf_text)
 
@@ -138,6 +144,11 @@ def audit_case(case: dict, pdf_text: str) -> dict:
         if not any(name in our_lic or name in norm for name in gt["licenses"]):
             issues.append(("許可業種ズレ",
                            f"当方=「{our_lic}」 / 公告記載=「{', '.join(gt['licenses'])}」"))
+    # 4) 網羅性: 公告にある頻出要件を当方ToDoが漏らしていないか
+    if gt["needs_hosho"] and "保証金" not in labels:
+        issues.append(("入札保証金_漏れ", "公告に入札保証金の記載があるがToDoに無い"))
+    if kind == "工事" and gt["needs_uchiwake"] and "内訳書" not in labels:
+        issues.append(("内訳書_漏れ", "公告に内訳書の記載があるがToDoに無い"))
     return {"issues": issues, "kind": kind, "our_license": our_lic, "gt": gt}
 
 
