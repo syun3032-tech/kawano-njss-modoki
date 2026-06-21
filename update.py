@@ -80,6 +80,20 @@ def run(reset: bool = False, koukai_instances: list[str] | None = None,
 
     if fast or full:
         # HTTPのみモード：監視機関だけ足して終了（Playwrightは使わない）
+        # 0b) 調達ポータル「落札実績オープンデータ」（国の調達の落札者・落札価格）。
+        #     競合（落札者）分析データを全国分に拡充。HTTPでZIP/CSVを取るだけ＝堅牢。
+        #     full=年度全件(直近2年)を網羅／fast=日次差分のみ(軽量)。追記(既存を消さない)。
+        try:
+            import awards_scraper
+            if full:
+                n_aw = awards_scraper.load(years=2)
+                print(f"[調達ポータル落札実績] {n_aw} 件（直近2年・電気工事系）")
+            else:
+                n_aw = awards_scraper.load_diff(days=7)
+                print(f"[調達ポータル落札実績] {n_aw} 件（直近差分・電気工事系）")
+        except Exception as e:  # noqa: BLE001
+            print(f"[調達ポータル落札実績] 取得失敗（スキップ）: {str(e)[:70]}")
+
         try:
             import agency_import
             n_ag = agency_import.load()

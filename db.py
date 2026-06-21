@@ -319,6 +319,26 @@ def get_case_id_by_external(external_id: str) -> int | None:
         return row[0] if row else None
 
 
+def update_winner_by_external(external_id: str, winner: str,
+                              win_price: str = "") -> bool:
+    """既存案件（external_id 一致）の落札者・落札価格だけを更新する。
+
+    落札結果を「別案件として重複追加」せず既存公告案件へ後付けしたい場合に使う
+    最小ヘルパ。external_id が一致する案件が無ければ何もせず False を返す。
+    （調達ポータル落札実績は案件番号体系が官公需APIと異なり安全に突合できないため
+    現状は別レコードとして upsert している。将来突合可能になった時の更新口として用意。）
+    """
+    if not external_id or not winner:
+        return False
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE cases SET winner = ?, win_price = ? WHERE external_id = ?",
+            (winner, win_price, external_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
 def distinct_values(column: str) -> list[str]:
     """フィルタUIの候補値（指定カラムの非空ユニーク値）。"""
     allowed = {"category", "procurement_type", "bid_method", "prefecture",
