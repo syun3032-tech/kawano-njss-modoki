@@ -116,6 +116,25 @@ def test_parse_deadline_reiwa_and_keyword_priority():
     assert k.parse_deadline_from_text("締切は6月30日") == ""
 
 
+def test_parse_deadline_scans_all_occurrences():
+    """見出しの「提出期限」に空振りしても、後続の実日付を拾える（全出現探索）。"""
+    text = ("５ 入札書の提出期限及び場所\n"
+            "(1) 提出期限 電子調達システムにより令和8年7月15日まで")
+    assert k.parse_deadline_from_text(text, "2026-06-20") == "2026-07-15"
+
+
+def test_parse_deadline_rejects_out_of_range():
+    """公告日と同日・公告前・現実離れした遠い先（工期末等）は締切として採らない。"""
+    # 同日は不可（入札締切が公告当日はあり得ない）
+    assert k.parse_deadline_from_text("提出期限 令和8年6月20日", "2026-06-20") == ""
+    # 公告より前は不可
+    assert k.parse_deadline_from_text("提出期限 令和8年6月1日", "2026-06-20") == ""
+    # 150日超（工期末の誤抽出想定）は不可
+    assert k.parse_deadline_from_text("提出期限 令和9年3月26日", "2026-06-20") == ""
+    # 範囲内は採る
+    assert k.parse_deadline_from_text("提出期限 令和8年7月10日", "2026-06-20") == "2026-07-10"
+
+
 def _run_all():
     tests = [v for n, v in sorted(globals().items())
              if n.startswith("test_") and callable(v)]

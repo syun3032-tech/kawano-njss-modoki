@@ -19,6 +19,7 @@ import re
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from datetime import date as _date, timedelta as _timedelta
 
 import db
 from regions import region_of
@@ -68,6 +69,10 @@ _DEADLINE_KEYWORDS_PRIMARY = (
 # 期間系: 「YYYY〜YYYY」の終端（最後の日付）を採る。
 _DEADLINE_KEYWORDS_PERIOD = ("入札受付期間", "参加申込", "受付期間", "申込")
 _DEADLINE_KEYWORDS_FALLBACK = ("開札日時", "開札", "入札日時", "入札日", "期限")
+
+# 本文から拾う締切の許容上限（公告日から何日後まで妥当とみなすか）。
+# これを超える日付は工期末・履行期限等の誤抽出とみなして採らない。
+_DEADLINE_MAX_DAYS_AFTER = 150
 
 # 令和N年M月D日（年月日それぞれ全角/半角混在可）
 _REIWA_RE = re.compile(r"令和\s*(\d{1,2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日")
@@ -143,32 +148,48 @@ def parse_deadline_from_text(text: str, announced_date: str = "") -> str:
         return ""
     norm = text.translate(_ZEN2HAN)
     ann = announced_date if re.fullmatch(r"\d{4}-\d{2}-\d{2}", announced_date or "") else ""
+    ann_d = None
+    if ann:
+        try:
+            ann_d = _date.fromisoformat(ann)
+        except ValueError:
+            ann_d = None
 
     def _ok(iso: str) -> bool:
-        return bool(iso) and (not ann or iso >= ann)
+        if not iso:
+            return False
+        if ann_d is None:
+            return True
+        try:
+            d = _date.fromisoformat(iso)
+        except ValueError:
+            return False
+        # 公告日より後 かつ 現実的な範囲内のみ採用。工期末・履行期限・回答掲載日
+        # などの誤抽出を弾く（誤った締切は閉じた案件を「応募可」に出すため空より有害）。
+        return ann_d < d <= ann_d + _timedelta(days=_DEADLINE_MAX_DAYS_AFTER)
 
-    # 1) 提出/締切/公開終了系を優先（キーワード直後の最初の日付）
-    for kw in _DEADLINE_KEYWORDS_PRIMARY:
-        pos = norm.find(kw)
-        if pos >= 0:
-            iso = _date_near_keyword(norm, pos + len(kw))
-            if _ok(iso):
-                return iso
-    # 2) 受付期間など範囲表記は終端（最後の日付）を締切とみなす
-    for kw in _DEADLINE_KEYWORDS_PERIOD:
-        pos = norm.find(kw)
-        if pos >= 0:
-            iso = _last_date_near_keyword(norm, pos + len(kw))
-            if _ok(iso):
-                return iso
-    # 3) 開札系のフォールバック
-    for kw in _DEADLINE_KEYWORDS_FALLBACK:
-        pos = norm.find(kw)
-        if pos >= 0:
-            iso = _date_near_keyword(norm, pos + len(kw))
-            if _ok(iso):
-                return iso
-    return ""
+    def _scan(keywords, finder, window):
+        """各キーワードの『全出現箇所』を順に試す。
+
+        従来は最初の1箇所しか見ず、見出しの「提出期限」等に当たって近傍に日付が
+        無いと諦めていた（取りこぼしの主因）。全出現を試して取得率を上げる。
+        """
+        for kw in keywords:
+            start = 0
+            while True:
+                pos = norm.find(kw, start)
+                if pos < 0:
+                    break
+                iso = finder(norm, pos + len(kw), window)
+                if _ok(iso):
+                    return iso
+                start = pos + len(kw)
+        return ""
+
+    # 1) 提出/締切/公開終了系 → 2) 受付期間(終端) → 3) 開札系（この優先順は維持）
+    return (_scan(_DEADLINE_KEYWORDS_PRIMARY, _date_near_keyword, 50)
+            or _scan(_DEADLINE_KEYWORDS_PERIOD, _last_date_near_keyword, 60)
+            or _scan(_DEADLINE_KEYWORDS_FALLBACK, _date_near_keyword, 50))
 
 
 def _valid_iso(s: str) -> str:
