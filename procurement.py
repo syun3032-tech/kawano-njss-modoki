@@ -202,14 +202,26 @@ def procurement_kind(case: dict) -> str:
             return "工事"
         if "役務" in pt or "委託" in pt:
             return "役務"
-    # procurement_type が空（DBで224件）: タイトル・方式から推定。
-    title = case.get("title", "")
-    if any(k in title for k in ("委託", "業務委託", "役務", "保守", "点検", "保安管理")):
+    # procurement_type が空（自治体スクレイパ等）: タイトル・方式から推定。
+    return infer_procurement_type(case.get("title", ""),
+                                  case.get("bid_method", "")) or "不明"
+
+
+def infer_procurement_type(title: str, bid_method: str = "") -> str:
+    """タイトル・入札方式から区分（工事/役務）を推定する。
+
+    確証が無ければ "" を返す（DB保存用。呼び出し側で「不明」扱いにできる）。
+    役務語を優先判定（"○○工事の保守業務委託" 等で工事に誤判定しないため）。
+    次にタイトルに「工事」を含めば工事と積極判定する。
+    """
+    t = title or ""
+    if any(k in t for k in ("委託", "業務委託", "役務", "保守", "点検", "保安管理")):
         return "役務"
-    bm = normalize_bid_method(case.get("bid_method", ""))
-    if bm == "委託・役務":
+    if normalize_bid_method(bid_method) == "委託・役務":
         return "役務"
-    return "不明"
+    if "工事" in t:
+        return "工事"
+    return ""
 
 
 def _is_electrical(category: str) -> bool:

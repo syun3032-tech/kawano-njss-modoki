@@ -125,6 +125,20 @@ def test_procurement_kind() -> bool:
     ok &= _check("空+保安管理→役務",
                  p.procurement_kind({"procurement_type": "", "title": "自家用電気工作物保安管理業務委託"}) == "役務")
     ok &= _check("空+情報なし→不明", p.procurement_kind({"procurement_type": "", "title": "○○整備"}) == "不明")
+    # タイトルに「工事」を含めば工事と積極判定（自治体スクレイパの区分空対策）
+    ok &= _check("空+工事タイトル→工事",
+                 p.procurement_kind({"procurement_type": "", "title": "交通信号機改修工事"}) == "工事")
+    return ok
+
+
+def test_infer_procurement_type() -> bool:
+    ok = True
+    ok &= _check("工事タイトル→工事", p.infer_procurement_type("西浄化センター電気設備工事") == "工事")
+    ok &= _check("委託タイトル→役務", p.infer_procurement_type("電力量計更新業務委託") == "役務")
+    # 役務語を優先（"工事"を含んでも保守委託は役務）
+    ok &= _check("工事を含む保守委託→役務", p.infer_procurement_type("受変電設備工事の保守業務委託") == "役務")
+    # 判別不能は空文字（DB保存で「不明」扱いにできる）
+    ok &= _check("判別不能→空", p.infer_procurement_type("○○整備") == "")
     return ok
 
 
@@ -247,6 +261,7 @@ def main() -> int:
         test_generic_url_detection, test_is_real_link, test_classify_platform,
         test_portal_for, test_search_urls, test_application_guide,
         test_normalize_bid_method, test_procurement_kind,
+        test_infer_procurement_type,
         test_req_works_national, test_req_works_local,
         test_req_service_cleaning, test_req_service_security,
         test_req_electrical_safety, test_req_service_national,

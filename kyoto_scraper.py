@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 
 import db
+import procurement
 
 START_URL = ("https://kyoto.efftis.jp/26000/CALS/PPI_P/"
              "pages/PPI_P/PiCtBaFi02/PiCtBaFi02start.vm")
@@ -109,6 +110,8 @@ def _parse(page) -> list[dict]:
                 "region": "近畿",
                 "prefecture": PREFECTURE,
                 "category": rec["category"] or "電気工事",
+                "procurement_type": procurement.infer_procurement_type(
+                    rec["title"], rec["bid_method"]),
                 "bid_method": rec["bid_method"],
                 "announced_date": announced,
                 "deadline": deadline,

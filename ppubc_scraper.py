@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 
 import db
+import procurement
 
 # 既知の PPUBC 自治体インスタンス（base_url, 都道府県, 機関名, 地方）
 # efftis は <市>.efftis.jp/PPI/Public/ パターンで多数の自治体をホスト。base追加で拡張可。
@@ -96,6 +97,8 @@ def _parse(page, prefecture: str, agency: str, region: str, base: str) -> list[d
                 "region": region,
                 "prefecture": prefecture,
                 "category": cat,
+                "procurement_type": procurement.infer_procurement_type(
+                    rec["title"], rec["bid_method"]),
                 "bid_method": rec["bid_method"],
                 "announced_date": "",
                 "deadline": "",

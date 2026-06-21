@@ -76,6 +76,9 @@ def _normalize(raw: dict) -> dict:
         "region": region_of(pref) or "",
         "prefecture": pref,
         "category": raw.get("category", "電気工事"),
+        # PPI は「工事入札公告/経過」由来でいずれも建設工事。区分を明示し、
+        # 必要書類・ToDo判定やフィルタが正しく効くようにする。
+        "procurement_type": "工事",
         "bid_method": raw.get("bid_method", ""),
         "announced_date": raw.get("announced_date", ""),
         "deadline": raw.get("deadline", ""),
