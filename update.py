@@ -26,6 +26,9 @@ import seed_data
 # --fast（毎日の自動更新／Renderビルド時）で、これ未満なら生成失敗とみなしデプロイ中止。
 # 通常は官公需APIだけで数千件入るので、500未満はAPI障害等の異常値。
 FAST_MIN_CASES = 500
+# --full（全国網羅・都道府県分割）の正常下限。通常は数万件入るので、これ未満は
+# ネット障害等で取得が大量に失敗した異常値とみなし、既存データを入れ替えない。
+FULL_MIN_CASES = 5000
 
 
 def run(reset: bool = False, koukai_instances: list[str] | None = None,
@@ -53,11 +56,23 @@ def run(reset: bool = False, koukai_instances: list[str] | None = None,
             rows += kkj_scraper.fetch_nationwide_electrical()
         # external_id で重複排除
         rows = list({r["external_id"]: r for r in rows if r.get("title")}.values())
-        if rows:
+        # 【過小取得ガード】ネット障害等で取得が一部しか成功しないと、0件ではないが
+        #   極端に少ない件数（例: 12,787→120）になることがある。これで既存の正常データを
+        #   入れ替えると良データを破壊してしまう。新規件数が既存に対し過小なら入替を中止。
+        existing = db.count_cases("官公需API")
+        # 下限 = max(絶対下限, 既存の50%)。既存が無い初回は絶対下限のみで判定。
+        # 網羅モード(--full)は本来数万件入るので、新規CI(既存0)でも高い絶対下限で守る。
+        abs_floor = FULL_MIN_CASES if full else FAST_MIN_CASES
+        floor = max(abs_floor, int(existing * 0.5)) if existing else abs_floor
+        undersized = bool(rows) and len(rows) < floor
+        if rows and not undersized:
             if fast or full:
                 db.clear_cases("官公需API")  # 成功時のみ古いAPI行を入替
             n = db.upsert_cases(rows)
             print(f"[官公需API] {n} 件（{'全国網羅・都道府県分割' if full else '関西＋全国'}・重複除外）")
+        elif undersized:
+            print(f"[官公需API] 取得 {len(rows)} 件は既存 {existing} 件に対し過小"
+                  f"（下限 {floor} 未満）。ネット障害等の疑いがあるため入替を中止し既存データを維持。")
         else:
             print("[官公需API] 取得0件のため既存データを維持（差し替えなし）")
     except Exception as e:  # noqa: BLE001

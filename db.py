@@ -316,8 +316,12 @@ def distinct_values(column: str) -> list[str]:
         return [r[0] for r in conn.execute(sql).fetchall()]
 
 
-def count_cases() -> int:
+def count_cases(source: str | None = None) -> int:
+    """案件の総数。source 指定でその取得元のみ数える。"""
     with _connect() as conn:
+        if source:
+            return conn.execute(
+                "SELECT COUNT(*) FROM cases WHERE source = ?", (source,)).fetchone()[0]
         return conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0]
 
 

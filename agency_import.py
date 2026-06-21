@@ -41,11 +41,29 @@ def platform_of(domain: str) -> str:
     return "個別/不明"
 
 
+def _fetch_csv(retries: int = 3) -> str:
+    """スプレッドシートCSVを取得。DNS瞬断/タイムアウト等の一過性失敗は retries 回再試行。
+
+    毎日の自動更新がたまたまネットワーク不調と重なると監視機関リストが0件になり、
+    応募ガイドのポータル判定が弱くなる。1回の瞬断で落とさないための保険。
+    """
+    import time
+    req = urllib.request.Request(CSV_URL, headers={"User-Agent": "Mozilla/5.0"})
+    last_err: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as res:
+                return res.read().decode("utf-8")
+        except Exception as e:  # noqa: BLE001 — 一過性ネットワーク失敗を再試行
+            last_err = e
+            if attempt < retries:
+                time.sleep(2 * (attempt + 1))
+    raise last_err if last_err else RuntimeError("CSV取得に失敗")
+
+
 def fetch_rows() -> list[dict]:
     """スプレッドシートCSVを取得して agencies 行 dict に整形する。"""
-    req = urllib.request.Request(CSV_URL, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=30) as res:
-        text = res.read().decode("utf-8")
+    text = _fetch_csv()
     reader = csv.DictReader(io.StringIO(text))
     rows: list[dict] = []
     for r in reader:
