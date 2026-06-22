@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import tempfile
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -32,6 +34,39 @@ import procurement
 
 _ENV_PATH = Path(__file__).parent / ".env"
 _API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+# 全文PDFを読ませる最大文字数（Geminiの入力。3〜7千字が普通なので余裕を持たせる）。
+_PDF_MAX_CHARS = 14000
+
+
+def _fetch_pdf_text(url: str, timeout: int = 25) -> str:
+    """公告PDFを取得しテキスト化（pdftotext→pypdfフォールバック）。失敗時は ""。
+
+    本番(Render)に poppler は無いので、pdftotext が無ければ pip の pypdf で抽出する。
+    """
+    if not url or not (url.lower().endswith(".pdf")):
+        return ""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            data = res.read()
+    except Exception:  # noqa: BLE001
+        return ""
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as f:
+        f.write(data)
+        f.flush()
+        try:  # poppler があれば最良（主にローカル）
+            out = subprocess.run(["pdftotext", "-enc", "UTF-8", f.name, "-"],
+                                 capture_output=True, timeout=30)
+            if out.returncode == 0 and out.stdout:
+                return out.stdout.decode("utf-8", "ignore")[:_PDF_MAX_CHARS]
+        except Exception:  # noqa: BLE001
+            pass
+        try:  # 本番含むどこでも動く（pure-python）
+            import pypdf
+            r = pypdf.PdfReader(f.name)
+            return "\n".join((p.extract_text() or "") for p in r.pages)[:_PDF_MAX_CHARS]
+        except Exception:  # noqa: BLE001
+            return ""
 
 
 def _load_env() -> None:
@@ -150,8 +185,11 @@ def _requirements_lines(req: dict | None) -> str:
     return "\n".join(lines)
 
 
-def _build_user_text(case: dict, profile: dict | None, req: dict | None) -> str:
-    desc = (case.get("description") or "").strip()
+def _build_user_text(case: dict, profile: dict | None, req: dict | None,
+                     notice_text: str = "") -> str:
+    # 公告本文は「全文PDF（取得できた場合）」を優先。無ければ保存済み説明文(2000字)。
+    desc = (notice_text or case.get("description") or "").strip()
+    src_label = "公告全文（PDFから取得）" if notice_text else "公告本文（抜粋・2000字まで）"
     return (
         "# 案件\n"
         f"案件名: {case.get('title', '')}\n"
@@ -161,12 +199,15 @@ def _build_user_text(case: dict, profile: dict | None, req: dict | None) -> str:
         f"入札方式: {case.get('bid_method', '') or '不明'}\n"
         f"公告日: {case.get('announced_date', '') or '不明'} / 申込締切: {case.get('deadline', '') or '不明'}\n"
         f"予定価格: {case.get('budget', '') or '非公表/不明'}\n\n"
-        "# 公告本文（抜粋）\n"
+        f"# {src_label}\n"
         f"{desc or '（本文なし。公告ページで要確認）'}\n\n"
         "# 確定的に算出済みの必要書類（土台。AIはこれを案件に即して具体化・補強する）\n"
         f"{_requirements_lines(req)}\n\n"
         "# 自社（マイ条件）\n"
-        f"{_profile_lines(profile)}\n"
+        f"{_profile_lines(profile)}\n\n"
+        "注意: 上記の公告本文に書かれている事実のみを根拠にし、書かれていない具体値"
+        "（等級・面積・金額・日付等）は創作しないこと。本文で確認できない要件は"
+        "『公告で確認』と述べること。"
     )
 
 
@@ -210,7 +251,10 @@ def assist(case: dict, profile: dict | None = None,
         except Exception:  # noqa: BLE001 — 土台が無くてもAIは動かす
             requirements = None
 
-    data = _call_gemini(_build_user_text(case, profile, requirements))
+    # タップ時に公告PDFの全文を取得してAIに読ませる（取れなければ説明文にフォールバック）。
+    notice_text = _fetch_pdf_text(case.get("detail_url", ""))
+    data = _call_gemini(_build_user_text(case, profile, requirements, notice_text))
     data["enabled"] = True
     data["model"] = _model()
+    data["source"] = "pdf_full" if notice_text else "description"
     return data
