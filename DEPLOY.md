@@ -1,7 +1,7 @@
 # デプロイ手順 — Kawanoさん NJSSモドキ（ランニングコスト 0 円）
 
-> リポジトリ: https://github.com/syun3032-tech/kawano-njss-modoki （private）
-> ワンクリック: https://render.com/deploy?repo=https://github.com/syun3032-tech/kawano-njss-modoki
+> リポジトリ: https://github.com/syun3032-tech/dgss （private）
+> ワンクリック: https://render.com/deploy?repo=https://github.com/syun3032-tech/dgss
 
 ## 仕上げ（あなたの操作・約2分・無料）
 1. https://dashboard.render.com にログイン（GitHubでサインイン可）

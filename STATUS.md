@@ -5,7 +5,7 @@
 ## 1. 何ができているか（現在地）
 
 - **公開URL**: https://kawano-njss-modoki.onrender.com （Render無料プラン）
-- **GitHubリポジトリ**: https://github.com/syun3032-tech/kawano-njss-modoki （private）
+- **GitHubリポジトリ**: https://github.com/syun3032-tech/dgss （private）
 - **案件データ**: 全国の電気工事入札 **約2000件**（全47都道府県・関西厚め）。すべて実データ。
 - **監視機関**: 全国 **1000機関**（公式入札ページへの導線つき）
 - **毎日自動更新**: GitHub Actions が毎日 `update.py --fast` を実行 → DB更新 → push → Render自動再デプロイ。**完全無料**。稼働実績あり（2026-06-11 成功）。

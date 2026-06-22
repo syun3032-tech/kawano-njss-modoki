@@ -21,7 +21,8 @@ import urllib.request
 import db
 
 # 公開リポジトリの固定タグ Release（認証不要でダウンロードできる）
-DB_URL = ("https://github.com/syun3032-tech/kawano-njss-modoki/"
+# リポジトリ名は dgss（旧 kawano-njss-modoki。GitHubが旧URLをリダイレクトするが直参照に更新）。
+DB_URL = ("https://github.com/syun3032-tech/dgss/"
           "releases/download/data-latest/denki_bid.db.gz")
 MIN_CASES = 500  # これ未満なら不正とみなしフォールバックさせる
 GZ_PATH = db.DB_PATH.with_suffix(".db.gz")
