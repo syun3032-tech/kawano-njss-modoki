@@ -648,6 +648,9 @@ def _normalize_partners(partners: Any) -> str:
         company = str(it.get("company", "")).strip()
         if not company:
             continue
+        # feasible は3状態: 1=可 / -1=否(断り) / 0=未回答（bid-next の可否UIに合わせる）
+        fe = it.get("feasible")
+        feasible = 1 if fe in (1, "1", "yes", True) else (-1 if fe in (-1, "-1", "no") else 0)
         cleaned.append({
             "company": company,
             "tel": str(it.get("tel", "")).strip(),
@@ -655,7 +658,7 @@ def _normalize_partners(partners: Any) -> str:
             "amount": str(it.get("amount", "")).strip(),
             "requested": 1 if it.get("requested") else 0,
             "replied": 1 if it.get("replied") else 0,
-            "feasible": 1 if it.get("feasible") else 0,
+            "feasible": feasible,
             "selected": 1 if it.get("selected") else 0,
             "note": str(it.get("note", "")).strip(),
         })
