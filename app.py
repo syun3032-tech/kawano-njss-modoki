@@ -431,6 +431,7 @@ def apply_case(case_id: int):
         "submit_method": text("submit_method"),
         "work": text("work"),
         "materials": text("materials"),
+        "agency_override": text("agency_override"),
         "flag": text("flag"),
         "needs_check": flag("needs_check"),
         "bid_plan": yen("bid_plan"),

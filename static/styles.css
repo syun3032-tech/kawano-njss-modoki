@@ -538,6 +538,25 @@ tr.row-check td { background: #fffaf0; }
 
 /* === 管理画面 案件モーダル（bid-next 準拠の見積/工程UI） === */
 .m-links{font-size:12px;margin:0 0 10px;color:#6b7280}
+/* AI応募可否判定パネル */
+.m-ai{margin:0 0 14px;padding:10px 12px;border:1px solid #e7e5e4;border-radius:10px;background:#faf9f7;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.m-ai small{color:#a8a29e;font-size:12px}
+.m-ai.busy{color:#78716c;font-style:italic}
+.m-ai.dim{color:#a8a29e;font-size:12.5px}
+.m-ai.res{flex-direction:column;align-items:stretch;gap:8px}
+.m-ai-top{display:flex;align-items:center;gap:8px}
+.m-ai-top b{font-size:13px}
+.m-ai-top .btn{margin-left:auto}
+.ai-v{font-weight:800;font-size:15px;padding:1px 9px;border-radius:6px}
+.ai-v.ok{background:#dcfce7;color:#166534}
+.ai-v.warn{background:#fef3c7;color:#92400e}
+.ai-v.ng{background:#fee2e2;color:#b91c1c}
+.ai-v.unk{background:#f4f4f5;color:#71717a}
+.m-ai-rs{margin:0;padding-left:18px;font-size:13px;color:#44403c;display:flex;flex-direction:column;gap:3px}
+.m-ai .ngbtn{background:#dc2626;color:#fff;border-color:#dc2626;align-self:flex-start}
+.m-ai .ngbtn:hover{background:#b91c1c}
+.m-ai .dim{color:#a8a29e}
+.btn.ghost{background:transparent;border-color:#e7e5e4;color:#78716c}
 .m-tabs{display:flex;gap:6px;margin:0 0 14px}
 .m-tab{flex:1;border:0;border-radius:8px;padding:8px;font:inherit;font-weight:700;background:#f4f1ea;color:#78716c;cursor:pointer}
 .m-tab.on{background:#1c1917;color:#fff}

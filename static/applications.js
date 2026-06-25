@@ -350,7 +350,25 @@
     if (!c.win_amount) c.win_amount = toYen(c0.win_price) || 0;
     var mtab = "情報";
     var chOpen = false, chQ = "", chPartner = false;
+    var aiResult = null, aiBusy = false;   // AI応募可否判定の結果
     var opt = function (arr, sel) { return arr.map(function (v) { return '<option value="' + esc(v) + '"' + (v === sel ? " selected" : "") + ">" + esc(v) + "</option>"; }).join(""); };
+
+    // AI応募可否判定パネル（公告を読み、自社の等級・資格と照合してOK/NGを出す）
+    function aiPanel() {
+      if (aiBusy) return '<div class="m-ai busy">AIが公告を読み込み、応募可否（等級など）を判定中…（10〜30秒）</div>';
+      if (!aiResult) return '<div class="m-ai"><button type="button" class="btn primary small" id="aiJudge">AIで応募可否を判定</button>' +
+        '<small>公告を読み、自社の保有資格・等級と照合して 〇/△/✕ を出します</small></div>';
+      if (aiResult.enabled === false) return '<div class="m-ai dim">AI判定はAIプラン（管理者がGEMINI_API_KEYとアカウント許可を設定）で使えます。</div>';
+      if (aiResult.error) return '<div class="m-ai dim">AI判定に失敗しました。' + '<button type="button" class="btn ghost small" id="aiRedo">再判定</button></div>';
+      var e = aiResult.eligibility || {}, v = e.verdict || "不明";
+      var cls = ({ "〇": "ok", "△": "warn", "✕": "ng" })[v] || "unk";
+      var reasons = (e.reasons || []).map(function (r) { return "<li>" + esc(r) + "</li>"; }).join("");
+      return '<div class="m-ai res ' + cls + '"><div class="m-ai-top"><b>AI応募可否</b> <span class="ai-v ' + cls + '">' + esc(v) + "</span>" +
+        '<button type="button" class="btn ghost small" id="aiRedo">再判定</button></div>' +
+        '<ul class="m-ai-rs">' + reasons + "</ul>" +
+        (v === "〇" ? '<span class="dim">応募できそうです</span>'
+          : '<button type="button" class="btn small ngbtn" id="aiNG">理由を添えてNGに入れる</button>') + "</div>";
+    }
 
     function infoHtml() {
       var steps = [
@@ -366,6 +384,7 @@
           '<span class="tl-days" style="color:' + (d == null ? "#a8a29e" : b.fg) + '">' + (d == null ? "" : daysLabel(d)) + "</span></div>";
       }).join("");
       return '<div class="m-grid">' +
+        fld("元機関（発注機関）", '<input name="agency_override" value="' + esc(c.agency || "") + '" placeholder="発注機関名（修正可）">', "full") +
         fld("状況", '<select name="status">' + opt(STATUSES.map(function (s) { return s.id; }), c.status) + "</select>") +
         fld("担当者", '<select name="assignee">' + opt(ASSIGNEES.map(function (a) { return a.id; }), c.assignee || "未割当") + "</select>") +
         fld("工事カテゴリ", '<select name="work"><option value="">（案件の業種）</option>' + opt(Object.keys(WORK), c.work || c.work_eff) + "</select>") +
@@ -436,10 +455,10 @@
         (c.detail_url ? ' ・ <a href="' + esc(c.detail_url) + '" target="_blank" rel="noopener">公告ページ</a>' : "") + "</div>";
       var tabs = '<div class="m-tabs"><button type="button" class="m-tab' + (mtab === "情報" ? " on" : "") + '" data-mt="情報">案件情報</button>' +
         '<button type="button" class="m-tab' + (mtab === "見積" ? " on" : "") + '" data-mt="見積">見積もり・発注</button></div>';
-      return links + tabs + (mtab === "情報" ? infoHtml() : quoteHtml());
+      return aiPanel() + links + tabs + (mtab === "情報" ? infoHtml() : quoteHtml());
     }
     function pullInfo(root) {
-      ["status", "assignee", "work", "submit_method", "apply_deadline", "bid_deadline", "open_date", "materials", "flag", "note"].forEach(function (n) {
+      ["status", "assignee", "work", "submit_method", "apply_deadline", "bid_deadline", "open_date", "materials", "flag", "note", "agency_override"].forEach(function (n) {
         var e = root.querySelector('[name="' + n + '"]'); if (e) c[n] = e.value;
       });
     }
@@ -456,7 +475,29 @@
         });
       });
       if (mtab === "見積") bindQuote(root);
+      bindAi(root);
       root.querySelector(".m-save").onclick = function () { if (mtab === "情報") pullInfo(root); else pullMoney(root); saveCase(c); };
+    }
+    function runAi(root, refresh) {
+      aiBusy = true; redraw(root);
+      var url = "/case/" + c.case_id + "/ai-assist" + (refresh ? "?refresh=1" : "");
+      fetch(url, { method: "POST", headers: { "X-Requested-With": "XMLHttpRequest" } })
+        .then(function (r) { if (r.status === 401 || r.status === 403) return { enabled: false }; return r.json(); })
+        .then(function (j) { aiResult = j || { error: true }; aiBusy = false; redraw(root); })
+        .catch(function () { aiResult = { error: true }; aiBusy = false; redraw(root); });
+    }
+    function bindAi(root) {
+      var j = root.querySelector("#aiJudge"); if (j) j.onclick = function () { if (mtab === "情報") pullInfo(root); else pullMoney(root); runAi(root, false); };
+      var rd = root.querySelector("#aiRedo"); if (rd) rd.onclick = function () { runAi(root, true); };
+      var ng = root.querySelector("#aiNG"); if (ng) ng.onclick = function () {
+        var e = (aiResult && aiResult.eligibility) || {};
+        var reason = (e.reasons || [])[0] || "AI判定で応募不可";
+        c.status = "NG";
+        c.flag = "AI: " + String(reason).slice(0, 60);
+        if (mtab === "情報") pullInfo(root); else pullMoney(root);
+        c.status = "NG"; c.flag = "AI: " + String(reason).slice(0, 60);
+        saveCase(c);
+      };
     }
     function bindQuote(root) {
       pullMoney(root);
@@ -502,12 +543,12 @@
     }
     mirrorCase(c);
     var MANAGED = "status,assignee,work,submit_method,apply_deadline,bid_deadline,open_date," +
-      "materials,partner,flag,note,needs_check,bid_plan,win_amount,award_called,partners";
+      "materials,partner,flag,note,needs_check,bid_plan,win_amount,award_called,partners,agency_override";
     var fd = new URLSearchParams();
     fd.append("ajax", "1");
     fd.append("managed", MANAGED);
     ["status", "assignee", "work", "submit_method", "apply_deadline", "bid_deadline",
-      "open_date", "materials", "partner", "flag", "note"].forEach(function (k) { fd.append(k, c[k] || ""); });
+      "open_date", "materials", "partner", "flag", "note", "agency_override"].forEach(function (k) { fd.append(k, c[k] || ""); });
     fd.append("bid_plan", c.bid_plan || 0); fd.append("win_amount", c.win_amount || 0);
     if (c.award_called) fd.append("award_called", "1");
     fd.append("partners", JSON.stringify(c.partners || []));

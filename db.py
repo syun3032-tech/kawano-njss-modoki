@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS applications (
     award_called   INTEGER DEFAULT 0,               -- 落札連絡済み（0/1）
     partner        TEXT DEFAULT '',                 -- 発注先の協力会社（採用見積の会社名）
     partners       TEXT DEFAULT '[]',               -- 協力会社見積（quotes・JSON配列）
+    agency_override TEXT DEFAULT '',                -- 元機関(発注機関)の上書き（案件のagency修正用）
     updated_at     TEXT DEFAULT (datetime('now'))
 );
 
@@ -250,6 +251,7 @@ def init_db() -> None:
             ("award_called",   "INTEGER DEFAULT 0"),
             ("partner",        "TEXT DEFAULT ''"),
             ("partners",       "TEXT DEFAULT '[]'"),
+            ("agency_override", "TEXT DEFAULT ''"),
         ):
             if col not in app_cols:
                 conn.execute(f"ALTER TABLE applications ADD COLUMN {col} {ddl}")
@@ -669,6 +671,7 @@ def _normalize_partners(partners: Any) -> str:
 _APP_TEXT_FIELDS = (
     "applied_date", "note", "assignee", "apply_deadline", "bid_deadline",
     "open_date", "submit_method", "work", "materials", "flag", "partner",
+    "agency_override",  # 元機関(発注機関)の手書き上書き（案件のagencyが不正確な時に修正）
 )
 _APP_INT_FIELDS = ("needs_check", "bid_plan", "win_amount", "award_called")
 
@@ -736,7 +739,10 @@ def get_application(case_id: int) -> dict[str, Any] | None:
 def list_applications(status: str | None = None) -> list[dict[str, Any]]:
     """申請管理一覧（案件情報をJOINして返す）。新しい更新順。"""
     sql = """
-        SELECT a.*, c.title, c.agency, c.agency_type, c.region, c.prefecture,
+        SELECT a.*,
+               c.title,
+               COALESCE(NULLIF(a.agency_override, ''), c.agency) AS agency,
+               c.agency_type, c.region, c.prefecture,
                c.category, c.deadline, c.announced_date, c.detail_url,
                c.external_id, c.budget, c.winner, c.win_price, c.spec_status
         FROM applications a

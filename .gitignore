@@ -20,3 +20,10 @@ denki_bid.db.gz
 
 # 認証DB（パスワードハッシュ。コミットしない）
 users.db
+set_render_env.sh
+
+# ローカル作業用の生成物・別プロジェクト（コミット対象外）
+公告PDF/
+newscreen/
+応募ターゲット_*.csv
+応募準備_*.md
