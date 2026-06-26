@@ -985,12 +985,20 @@ def default_profile() -> dict[str, Any]:
 
 
 def get_profile() -> dict[str, Any]:
-    """マイ条件を取得。profile行が無ければ資格通知書ベースの初期値を返す（揮発DB対策）。"""
+    """マイ条件を取得。profile行が無い／等級が空なら資格通知書ベースの初期値を補う（揮発DB対策）。"""
     with _connect() as conn:
         row = conn.execute("SELECT * FROM profile WHERE id = 1").fetchone()
-    if row:
-        return _hydrate_profile(dict(row))
-    return default_profile()
+    if not row:
+        return default_profile()
+    p = _hydrate_profile(dict(row))
+    # 古いlocalStorage復元などで等級が空のまま行が出来ているケース → 初期値を補完。
+    if not p.get("qualifications"):
+        d = default_profile()
+        p["qualifications"] = d["qualifications"]
+        for k in ("company", "representative", "address", "corp_number", "grade"):
+            if not p.get(k):
+                p[k] = d[k]
+    return p
 
 
 def _normalize_qualifications(quals: Any) -> str:
