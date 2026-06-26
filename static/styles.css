@@ -643,3 +643,9 @@ tr.row-check td { background: #fffaf0; }
 .qual-table input, .qual-table select { width: 100%; padding: 5px 7px; border: 1px solid var(--border-strong); border-radius: 6px; font-size: 13px; }
 .qual-table .q-issuer { min-width: 150px; }
 .qual-table .q-score, .qual-table .q-num { min-width: 70px; }
+
+/* AI判定→NGリストへ（案件詳細） */
+.ai-ng { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ng-btn { background: #dc2626; color: #fff; border-color: #dc2626; }
+.ng-btn:hover { background: #b91c1c; }
+.ng-btn:disabled { opacity: .6; cursor: default; }
