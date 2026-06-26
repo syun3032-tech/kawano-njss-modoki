@@ -354,7 +354,11 @@
   }
   function run(refresh) {
     out.hidden = false;
-    out.innerHTML = '<p class="ai-note">AIが公告と必要書類を読み込んでいます…（10〜30秒）</p>';
+    out.innerHTML = '<div class="ai-loading">'
+      + '<div class="ai-loading-msg">AIが公告と必要書類を読み込んでいます'
+      + '<span class="ai-dots"><i>.</i><i>.</i><i>.</i></span></div>'
+      + '<div class="ai-bar"></div>'
+      + '<div class="ai-loading-sub">10〜30秒ほどかかります。そのままお待ちください。</div></div>';
     btn.disabled = true;
     var url = '/case/' + caseId + '/ai-assist' + (refresh ? '?refresh=1' : '');
     fetch(url, { method: 'POST' })

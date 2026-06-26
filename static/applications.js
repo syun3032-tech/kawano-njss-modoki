@@ -369,7 +369,11 @@
 
     // AI応募可否判定パネル（公告を読み、自社の等級・資格と照合してOK/NGを出す）
     function aiPanel() {
-      if (aiBusy) return '<div class="m-ai busy">AIが公告を読み込み、応募可否（等級など）を判定中…（10〜30秒）</div>';
+      if (aiBusy) return '<div class="m-ai busy"><div class="ai-loading">'
+        + '<div class="ai-loading-msg">AIが公告を読み込み、応募可否（等級など）を判定中'
+        + '<span class="ai-dots"><i>.</i><i>.</i><i>.</i></span></div>'
+        + '<div class="ai-bar"></div>'
+        + '<div class="ai-loading-sub">10〜30秒ほどかかります。そのままお待ちください。</div></div></div>';
       if (!aiResult) return '<div class="m-ai"><button type="button" class="btn primary small" id="aiJudge">AIで応募可否を判定</button>' +
         '<small>公告を読み、自社の保有資格・等級と照合して 〇/△/✕ を出します</small></div>';
       if (aiResult.enabled === false) return '<div class="m-ai dim">AI判定はAIプラン（管理者がGEMINI_API_KEYとアカウント許可を設定）で使えます。</div>';
