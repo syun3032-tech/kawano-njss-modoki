@@ -673,3 +673,8 @@ tr.agc-off td.center { opacity: 1; }
 .ok-btn { background: #16a34a; color: #fff; border-color: #16a34a; }
 .ok-btn:hover { background: #15803d; }
 .ok-btn:disabled { opacity: .6; cursor: default; }
+
+/* AI結果：全ステータス直接ふり分けボタン列 */
+.ai-statuspick .stpick-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.stpick-row .st-pick { font-size: 12px; padding: 5px 11px; border-radius: 999px; }
+.stpick-row .st-pick:hover { border-color: var(--accent); color: var(--accent); }
