@@ -725,20 +725,6 @@ def agency_exclusions_restore():
     return jsonify({"restored": len(names)})
 
 
-@app.route("/healthz/supa")
-def healthz_supa():
-    """Supabase接続の一時診断（確認後に削除）。?key=companies 等で保存内容の件数も確認。"""
-    import supa
-    info = supa.diagnose()
-    key = request.args.get("key", "").strip()
-    if key:
-        data = supa.load(key)
-        info["key"] = key
-        info["key_present"] = data is not None
-        info["key_count"] = (len(data) if isinstance(data, (list, dict)) else None)
-    return jsonify(info)
-
-
 @app.route("/api/prefectures")
 def api_prefectures():
     """地方→都道府県の連動ドロップダウン用。"""
