@@ -668,3 +668,8 @@ tr.agc-off td.center { opacity: 1; }
 /* モーダルの削除ボタン（左寄せ・赤） */
 .modal-del { margin-right: auto; color: #dc2626; border-color: #f3b0b4; background: #fff; }
 .modal-del:hover { background: #fef2f2; }
+
+/* AI判定〇→申請管理に保存（案件詳細） */
+.ok-btn { background: #16a34a; color: #fff; border-color: #16a34a; }
+.ok-btn:hover { background: #15803d; }
+.ok-btn:disabled { opacity: .6; cursor: default; }

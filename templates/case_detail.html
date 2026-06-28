@@ -336,8 +336,11 @@
     html += '<div class="ai-block"><h3>参加資格の適合</h3>'
       + '<p><span class="ai-verdict ' + verdictClass + '">' + esc(elig.verdict || '不明') + '</span></p>'
       + ul(elig.reasons);
-    // ✕（または△/不明）のとき＝参加資格を満たさない → ワンタップでNGリストへ
-    if (elig.verdict && elig.verdict !== '〇') {
+    // ✕（または△/不明）→ ワンタップでNGリストへ。〇 → そのまま申請管理に保存。
+    if (elig.verdict === '〇') {
+      html += '<div class="ai-ng"><button type="button" class="btn ok-btn" id="aiOkBtn">この案件を申請管理に保存する</button>'
+        + '<span class="muted small"> 申請管理に登録し、AI判定の根拠をメモに残します</span></div>';
+    } else if (elig.verdict) {
       html += '<div class="ai-ng"><button type="button" class="btn ng-btn" id="aiNgBtn">このままNGリストへ入れる（理由つき）</button>'
         + '<span class="muted small"> 申請管理のNG列へ移動し、足りなかった点をメモに残します</span></div>';
     }
@@ -370,6 +373,21 @@
       nx.type = 'hidden'; nx.name = 'next'; nx.value = '/applications';  // 保存後はNG列を見せる
       form.appendChild(nx);
       ng.disabled = true; ng.textContent = 'NGへ登録中…';
+      if (typeof form.requestSubmit === 'function') form.requestSubmit(); else form.submit();
+    });
+    var ok = document.getElementById('aiOkBtn');
+    if (ok) ok.addEventListener('click', function () {
+      var reasons = (elig.reasons || []);
+      var memo = '【AI判定: 参加可】' + (reasons.length ? reasons.join(' / ') : 'AIが参加資格を満たすと判定');
+      var form = document.querySelector('.apply-form');
+      if (!form) { alert('申請フォームが見つかりません'); return; }
+      // 状況はフォームの現在値を尊重（NGにはしない。未登録なら既定の「参加申請準備前」で保存）
+      var note = form.querySelector('[name="note"]');
+      if (note) note.value = memo + (note.value ? ' ／ ' + note.value : '');
+      var nx = document.createElement('input');
+      nx.type = 'hidden'; nx.name = 'next'; nx.value = '/applications';
+      form.appendChild(nx);
+      ok.disabled = true; ok.textContent = '保存中…';
       if (typeof form.requestSubmit === 'function') form.requestSubmit(); else form.submit();
     });
   }
