@@ -70,7 +70,7 @@
   }
 
   /* ---------- ステート ---------- */
-  var state = { tab: "案件", assignee: null, status: null, q: "", coTag: null, coPartner: false, coSort: false };
+  var state = { tab: "案件", assignee: null, statuses: [], q: "", coTag: null, coPartner: false, coSort: false };
 
   /* ============================================================
      タブバー
@@ -123,9 +123,10 @@
     // 状態（ステータス）で絞る。担当の絞り込み後(rows)の件数で表示。
     var scnt = {}; rows.forEach(function (c) { scnt[c.status] = (scnt[c.status] || 0) + 1; });
     var chipsStatus = '<div class="chips"><span class="chips-label">状態で絞る:</span>' +
-      '<button class="chip2' + (!state.status ? " on" : "") + '" data-st="">すべて <b>' + rows.length + "</b></button>" +
+      '<button class="chip2' + (!state.statuses.length ? " on" : "") + '" data-st="">すべて <b>' + rows.length + "</b></button>" +
       STATUSES.map(function (s) {
-        return '<button class="chip2' + (state.status === s.id ? " on" : "") + '" data-st="' + esc(s.id) + '" style="--c:' + s.accent + '">' +
+        var on = state.statuses.indexOf(s.id) >= 0;
+        return '<button class="chip2' + (on ? " on" : "") + '" data-st="' + esc(s.id) + '" style="--c:' + s.accent + '">' +
           '<span class="dot" style="background:' + s.accent + '"></span>' + esc(s.id) + " <b>" + (scnt[s.id] || 0) + "</b></button>";
       }).join("") + "</div>";
     chips += chipsStatus;
@@ -147,8 +148,10 @@
         }).join("") + "</div>";
     }
 
-    // カンバン列（状態フィルタ時はその列だけ表示）
-    var shownStatuses = state.status ? STATUSES.filter(function (s) { return s.id === state.status; }) : STATUSES;
+    // カンバン列（状態フィルタ時は選んだ状態の列だけ表示・複数可）
+    var shownStatuses = state.statuses.length
+      ? STATUSES.filter(function (s) { return state.statuses.indexOf(s.id) >= 0; })
+      : STATUSES;
     var cols = shownStatuses.map(function (s) {
       var list = rows.filter(function (c) { return c.status === s.id; });
       return '<div class="kcol">' +
@@ -307,8 +310,17 @@
     // 担当チップ
     Array.prototype.forEach.call(document.querySelectorAll(".chip2"), function (b) {
       b.addEventListener("click", function () {
-        if (b.hasAttribute("data-st")) state.status = b.getAttribute("data-st") || null;
-        else state.assignee = b.getAttribute("data-as") || null;
+        if (b.hasAttribute("data-st")) {
+          var v = b.getAttribute("data-st");
+          if (!v) state.statuses = [];                       // 「すべて」で解除
+          else {
+            var i = state.statuses.indexOf(v);
+            if (i >= 0) state.statuses.splice(i, 1);          // 選択中なら外す
+            else state.statuses.push(v);                       // 未選択なら追加
+          }
+        } else {
+          state.assignee = b.getAttribute("data-as") || null;
+        }
         render();
       });
     });
