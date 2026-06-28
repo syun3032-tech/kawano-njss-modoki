@@ -725,6 +725,13 @@ def agency_exclusions_restore():
     return jsonify({"restored": len(names)})
 
 
+@app.route("/healthz/supa")
+def healthz_supa():
+    """Supabase接続の一時診断（確認後に削除）。"""
+    import supa
+    return jsonify(supa.diagnose())
+
+
 @app.route("/api/prefectures")
 def api_prefectures():
     """地方→都道府県の連動ドロップダウン用。"""

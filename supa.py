@@ -78,6 +78,41 @@ def save(key: str, obj: Any) -> bool:
         return False
 
 
+def diagnose() -> dict:
+    """接続診断（一時的なヘルスチェック用）。例外は文字列で返す。"""
+    info = {"enabled": enabled(), "url_set": bool(_url()),
+            "url_host": "", "connected": False, "rw_ok": False, "error": ""}
+    if not enabled():
+        info["error"] = "SUPABASE_DB_URL未設定"
+        return info
+    try:
+        # ホストだけ（パスワードは出さない）
+        import re
+        m = re.search(r"@([^:/]+)", _url())
+        info["url_host"] = m.group(1) if m else "?"
+    except Exception:
+        pass
+    try:
+        import psycopg2
+    except Exception as e:  # noqa: BLE001
+        info["error"] = "psycopg2 import失敗: " + repr(e)[:150]
+        return info
+    try:
+        conn = _connect()
+        info["connected"] = True
+        with conn.cursor() as cur:
+            cur.execute("CREATE TABLE IF NOT EXISTS kawano_kv (key TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())")
+            from psycopg2.extras import Json
+            cur.execute("INSERT INTO kawano_kv (key,data,updated_at) VALUES (%s,%s,now()) ON CONFLICT (key) DO UPDATE SET data=EXCLUDED.data, updated_at=now()", ("__healthcheck__", Json({"ok": 1})))
+            conn.commit()
+            cur.execute("SELECT data FROM kawano_kv WHERE key=%s", ("__healthcheck__",))
+            info["rw_ok"] = cur.fetchone() is not None
+        conn.close()
+    except Exception as e:  # noqa: BLE001
+        info["error"] = repr(e)[:300]
+    return info
+
+
 def load(key: str) -> Any:
     """key のデータを取得（無ければ None）。JSONBはそのまま python の list/dict で返る。"""
     if not enabled():
