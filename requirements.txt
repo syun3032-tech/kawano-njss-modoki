@@ -10,3 +10,4 @@ MarkupSafe==3.0.3
 gunicorn==26.0.0
 # AIアシストが公告PDF全文を読むためのフォールバック（pure-python・poppler不要）
 pypdf==6.1.3
+psycopg2-binary

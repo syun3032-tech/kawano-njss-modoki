@@ -20,7 +20,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import supa  # Supabase永続化（入力データをデプロイ揮発から守る・未設定時は無効）
+
 DB_PATH = Path(__file__).parent / "denki_bid.db"
+
+# Supabaseからの復元中は write-through を止める（書き戻しの無限ループ防止）
+_restoring = False
 
 # 仕様書の取得可否ステータス（取れる/取れない/不明）
 SPEC_AVAILABLE = "available"      # ダウンロード可能
@@ -274,6 +279,12 @@ def init_db() -> None:
             if col not in app_cols:
                 conn.execute(f"ALTER TABLE applications ADD COLUMN {col} {ddl}")
         conn.commit()
+    # Supabaseの保存内容をSQLiteへ復元（揮発DB対策）。未設定/不通でも黙って続行。
+    try:
+        supa.init()
+        restore_from_supa()
+    except Exception:  # noqa: BLE001 — 永続化層の失敗でアプリ起動を妨げない
+        pass
 
 
 def upsert_cases(rows: list[dict[str, Any]]) -> int:
@@ -559,6 +570,7 @@ def set_agency_excluded(name: str, excluded: bool) -> None:
         else:
             conn.execute("DELETE FROM agency_exclusions WHERE name = ?", (name,))
         conn.commit()
+    _push_exclusions()
 
 
 def replace_agency_exclusions(names: list[str]) -> None:
@@ -570,6 +582,7 @@ def replace_agency_exclusions(names: list[str]) -> None:
             conn.executemany("INSERT OR IGNORE INTO agency_exclusions (name) VALUES (?)",
                              [(n,) for n in clean])
         conn.commit()
+    _push_exclusions()
 
 
 def list_agencies(q: str = "") -> list[dict[str, Any]]:
@@ -740,6 +753,120 @@ def delete_application(case_id: int) -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM applications WHERE case_id = ?", (case_id,))
         conn.commit()
+    _push_applications()
+
+
+# ============================================================
+# Supabase 永続化（write-through ＋ 起動時復元）
+# ============================================================
+
+def _applications_for_supa() -> list[dict[str, Any]]:
+    """全申請を external_id つきで取り出す（Supabase保存用・案件ID振り直しに強い）。"""
+    sql = """
+        SELECT c.external_id AS external_id, a.*
+        FROM applications a JOIN cases c ON c.id = a.case_id
+        WHERE c.external_id IS NOT NULL AND c.external_id != ''
+    """
+    with _connect() as conn:
+        rows = [dict(r) for r in conn.execute(sql).fetchall()]
+    out = []
+    for r in rows:
+        r.pop("case_id", None)
+        r = _hydrate_application(r)  # partners を list に
+        out.append(r)
+    return out
+
+
+def _push_applications() -> None:
+    if _restoring:
+        return
+    supa.save("applications", _applications_for_supa())
+
+
+def _push_companies() -> None:
+    if _restoring:
+        return
+    supa.save("companies", list_companies())
+
+
+def _push_profile() -> None:
+    if _restoring:
+        return
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM profile WHERE id = 1").fetchone()
+    if row:
+        supa.save("profile", _hydrate_profile(dict(row)))
+
+
+def _push_exclusions() -> None:
+    if _restoring:
+        return
+    supa.save("agency_exclusions", sorted(list_agency_exclusions()))
+
+
+def restore_from_supa() -> dict[str, int]:
+    """起動時：Supabaseの保存内容を SQLite へ流し込む（Supabaseが真の保存先）。
+
+    すべて失敗しても例外は投げない（アプリは動き続ける）。
+    """
+    global _restoring
+    if not supa.enabled():
+        return {}
+    counts = {"applications": 0, "companies": 0, "profile": 0, "exclusions": 0}
+    _restoring = True
+    try:
+        # 申請（external_id → 現在の case_id に解決して投入）
+        apps = supa.load("applications")
+        if isinstance(apps, list):
+            for it in apps:
+                ext = (it.get("external_id") or "").strip()
+                if not ext:
+                    continue
+                cid = get_case_id_by_external(ext)
+                if cid is None:
+                    continue
+                fields = {k: it.get(k) for k in (
+                    "applied_date", "note", "assignee", "apply_deadline", "bid_deadline",
+                    "open_date", "submit_method", "work", "materials", "flag",
+                    "needs_check", "bid_plan", "win_amount", "award_called", "partner", "partners")}
+                try:
+                    set_application(cid, it.get("status") or "参加申請準備前", **fields)
+                    counts["applications"] += 1
+                except ValueError:
+                    pass
+        # 協力会社（全消し→投入）
+        comps = supa.load("companies")
+        if isinstance(comps, list):
+            with _connect() as conn:
+                conn.execute("DELETE FROM companies")
+                conn.commit()
+            for c in comps:
+                c.pop("id", None)
+                upsert_company(c)
+                counts["companies"] += 1
+        # マイ条件
+        prof = supa.load("profile")
+        if isinstance(prof, dict) and (prof.get("company") or prof.get("qualifications")):
+            save_profile(
+                prefectures=prof.get("prefectures", ""),
+                categories=prof.get("categories", "電気工事"),
+                budget_max=prof.get("budget_max", ""),
+                grade=prof.get("grade", ""), quals=prof.get("quals", ""),
+                company=prof.get("company", ""), representative=prof.get("representative", ""),
+                address=prof.get("address", ""), corp_number=prof.get("corp_number", ""),
+                qualifications=prof.get("qualifications", []))
+            counts["profile"] = 1
+        # 監視機関の除外
+        exc = supa.load("agency_exclusions")
+        if isinstance(exc, list):
+            replace_agency_exclusions(exc)
+            counts["exclusions"] = len(exc)
+    except Exception as e:  # noqa: BLE001 — 復元失敗でアプリを落とさない
+        import logging
+        logging.getLogger(__name__).warning("supa restore failed: %s", e)
+    finally:
+        _restoring = False
+    return counts
 
 
 def set_application(case_id: int, status: str, **fields: Any) -> None:
@@ -782,6 +909,7 @@ def set_application(case_id: int, status: str, **fields: Any) -> None:
             (case_id, *vals),
         )
         conn.commit()
+    _push_applications()
 
 
 def _hydrate_application(row: dict[str, Any]) -> dict[str, Any]:
@@ -870,19 +998,23 @@ def upsert_company(data: dict[str, Any]) -> int:
                 (*vals, int(cid)),
             )
             conn.commit()
-            return int(cid)
-        cur = conn.execute(
-            """INSERT INTO companies (name, area, tags, tel, url, note, partner, rating, reviews)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""", vals,
-        )
-        conn.commit()
-        return int(cur.lastrowid)
+            ret = int(cid)
+        else:
+            cur = conn.execute(
+                """INSERT INTO companies (name, area, tags, tel, url, note, partner, rating, reviews)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""", vals,
+            )
+            conn.commit()
+            ret = int(cur.lastrowid)
+    _push_companies()
+    return ret
 
 
 def delete_company(company_id: int) -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM companies WHERE id=?", (company_id,))
         conn.commit()
+    _push_companies()
 
 
 def count_companies() -> int:
@@ -1102,6 +1234,7 @@ def save_profile(prefectures: str, categories: str, budget_max: str,
              representative, address, corp_number, quals_json),
         )
         conn.commit()
+    _push_profile()
 
 
 def match_cases(profile: dict[str, Any], limit: int = 300) -> list[dict[str, Any]]:
