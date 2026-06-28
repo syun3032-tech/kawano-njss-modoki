@@ -70,7 +70,7 @@
   }
 
   /* ---------- ステート ---------- */
-  var state = { tab: "案件", assignee: null, q: "", coTag: null, coPartner: false, coSort: false };
+  var state = { tab: "案件", assignee: null, status: null, q: "", coTag: null, coPartner: false, coSort: false };
 
   /* ============================================================
      タブバー
@@ -120,6 +120,16 @@
           '<span class="dot" style="background:' + a.color + '"></span>' + esc(a.id) + " <b>" + (counts[a.id] || 0) + "</b></button>";
       }).join("") + "</div>";
 
+    // 状態（ステータス）で絞る。担当の絞り込み後(rows)の件数で表示。
+    var scnt = {}; rows.forEach(function (c) { scnt[c.status] = (scnt[c.status] || 0) + 1; });
+    var chipsStatus = '<div class="chips"><span class="chips-label">状態で絞る:</span>' +
+      '<button class="chip2' + (!state.status ? " on" : "") + '" data-st="">すべて <b>' + rows.length + "</b></button>" +
+      STATUSES.map(function (s) {
+        return '<button class="chip2' + (state.status === s.id ? " on" : "") + '" data-st="' + esc(s.id) + '" style="--c:' + s.accent + '">' +
+          '<span class="dot" style="background:' + s.accent + '"></span>' + esc(s.id) + " <b>" + (scnt[s.id] || 0) + "</b></button>";
+      }).join("") + "</div>";
+    chips += chipsStatus;
+
     var cards = '<div class="sumrow">' +
       sumCard(active.length, "進行中の案件") +
       sumCard(soon.length, "1週間以内の締切", soon.length ? "warn" : "") +
@@ -137,8 +147,9 @@
         }).join("") + "</div>";
     }
 
-    // カンバン列
-    var cols = STATUSES.map(function (s) {
+    // カンバン列（状態フィルタ時はその列だけ表示）
+    var shownStatuses = state.status ? STATUSES.filter(function (s) { return s.id === state.status; }) : STATUSES;
+    var cols = shownStatuses.map(function (s) {
       var list = rows.filter(function (c) { return c.status === s.id; });
       return '<div class="kcol">' +
         '<div class="kcol-head" style="border-top:3px solid ' + s.accent + '">' +
@@ -295,7 +306,11 @@
   function bind() {
     // 担当チップ
     Array.prototype.forEach.call(document.querySelectorAll(".chip2"), function (b) {
-      b.addEventListener("click", function () { state.assignee = b.getAttribute("data-as") || null; render(); });
+      b.addEventListener("click", function () {
+        if (b.hasAttribute("data-st")) state.status = b.getAttribute("data-st") || null;
+        else state.assignee = b.getAttribute("data-as") || null;
+        render();
+      });
     });
     // カードクリック→編集
     Array.prototype.forEach.call(document.querySelectorAll(".kcard"), function (el) {
