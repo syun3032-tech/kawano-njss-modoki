@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS cases (
     winner        TEXT    DEFAULT '',                -- 落札者（競合企業分析の核）
     win_price     TEXT    DEFAULT '',                -- 落札価格
     description   TEXT    DEFAULT '',                -- 案件説明（締切抽出元の自由記述）
+    sector        TEXT    DEFAULT '公共',            -- 区分（公共/民間）。手動追加で民間も管理する
     created_at    TEXT    DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_cases_pref     ON cases(prefecture);
@@ -253,6 +254,8 @@ def init_db() -> None:
             conn.execute("ALTER TABLE cases ADD COLUMN procurement_type TEXT DEFAULT ''")
         if "budget_yen" not in case_cols:
             conn.execute("ALTER TABLE cases ADD COLUMN budget_yen INTEGER DEFAULT 0")
+        if "sector" not in case_cols:
+            conn.execute("ALTER TABLE cases ADD COLUMN sector TEXT DEFAULT '公共'")
         # 列追加後に索引を作成（新設列のため SCHEMA からは外してある）
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_proctype ON cases(procurement_type)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cases_budgetyen ON cases(budget_yen)")
@@ -294,6 +297,7 @@ def upsert_cases(rows: list[dict[str, Any]]) -> int:
         "region", "prefecture", "category", "procurement_type", "bid_method",
         "announced_date", "deadline", "detail_url", "spec_status", "spec_reason",
         "spec_url", "budget", "budget_yen", "winner", "win_price", "description",
+        "sector",
     ]
     placeholders = ", ".join(["?"] * len(cols))
     updates = ", ".join(f"{c}=excluded.{c}" for c in cols if c != "external_id")
@@ -310,12 +314,34 @@ def upsert_cases(rows: list[dict[str, Any]]) -> int:
                 return int(v) if v not in ("", None) else 0
             except (TypeError, ValueError):
                 return 0
+        # sector 未指定の取得元（スクレイパ）は公共とみなす。
+        if c == "sector":
+            return r.get(c) or "公共"
         return r.get(c, "")
 
     with _connect() as conn:
         conn.executemany(sql, [tuple(_val(r, c) for c in cols) for r in rows])
         conn.commit()
     return len(rows)
+
+
+def add_manual_case(title: str, agency: str = "", sector: str = "公共",
+                    category: str = "") -> tuple[int, str]:
+    """手動で案件を1件作成する（民間・公共どちらも）。(case_id, external_id) を返す。
+
+    external_id は再採番・揮発DBに強い安定キー。手動案件は復元時に案件本体を
+    再生成できるよう 'manual:' 接頭辞で識別する。
+    """
+    import uuid
+    ext = "manual:" + uuid.uuid4().hex
+    upsert_cases([{
+        "source": "manual", "external_id": ext,
+        "title": (title or "").strip() or "（無題の案件）",
+        "agency": (agency or "").strip(), "category": (category or "").strip(),
+        "sector": sector if sector in ("公共", "民間") else "公共",
+    }])
+    cid = get_case_id_by_external(ext)
+    return (cid, ext)
 
 
 def _as_list(v: Any) -> list[str]:
@@ -763,7 +789,11 @@ def delete_application(case_id: int) -> None:
 def _applications_for_supa() -> list[dict[str, Any]]:
     """全申請を external_id つきで取り出す（Supabase保存用・案件ID振り直しに強い）。"""
     sql = """
-        SELECT c.external_id AS external_id, a.*
+        SELECT c.external_id AS external_id,
+               c.title AS _case_title, c.agency AS _case_agency,
+               COALESCE(NULLIF(c.sector, ''), '公共') AS _case_sector,
+               c.source AS _case_source, c.category AS _case_category,
+               a.*
         FROM applications a JOIN cases c ON c.id = a.case_id
         WHERE c.external_id IS NOT NULL AND c.external_id != ''
     """
@@ -824,7 +854,20 @@ def restore_from_supa() -> dict[str, int]:
                     continue
                 cid = get_case_id_by_external(ext)
                 if cid is None:
-                    continue
+                    # 手動案件は案件本体ごと再生成（揮発DB対策）。公共のスクレイプ案件は
+                    # 公開終了とみなしスキップ（従来どおり）。
+                    if ext.startswith("manual:"):
+                        upsert_cases([{
+                            "source": it.get("_case_source") or "manual",
+                            "external_id": ext,
+                            "title": it.get("_case_title") or "（無題の案件）",
+                            "agency": it.get("_case_agency") or "",
+                            "category": it.get("_case_category") or "",
+                            "sector": it.get("_case_sector") or "民間",
+                        }])
+                        cid = get_case_id_by_external(ext)
+                    if cid is None:
+                        continue
                 fields = {k: it.get(k) for k in (
                     "applied_date", "note", "assignee", "apply_deadline", "bid_deadline",
                     "open_date", "submit_method", "work", "materials", "flag",
@@ -938,7 +981,8 @@ def list_applications(status: str | None = None) -> list[dict[str, Any]]:
                COALESCE(NULLIF(a.agency_override, ''), c.agency) AS agency,
                c.agency_type, c.region, c.prefecture,
                c.category, c.deadline, c.announced_date, c.detail_url,
-               c.external_id, c.budget, c.winner, c.win_price, c.spec_status
+               c.external_id, c.budget, c.winner, c.win_price, c.spec_status,
+               COALESCE(NULLIF(c.sector, ''), '公共') AS sector, c.source
         FROM applications a
         JOIN cases c ON c.id = a.case_id
     """

@@ -473,6 +473,43 @@ def application_delete(case_id: int):
     return redirect(url_for("applications"))
 
 
+@app.route("/applications/new", methods=["POST"])
+def application_new():
+    """手動で案件を1件作成し、申請管理（カンバン）へ登録する。
+
+    NJSSに出ない民間案件や、外部で取れた案件も同じ盤面で管理するための入口。
+    「案件を探す」画面へ遷移せず、その場で追加できる。
+    """
+    f = request.form
+    title = (f.get("title") or "").strip()
+    if not title:
+        return jsonify({"error": "案件名は必須です"}), 400
+    sector = (f.get("sector") or "公共").strip()
+    if sector not in ("公共", "民間"):
+        sector = "公共"
+    work = (f.get("work") or "").strip()
+    status = (f.get("status") or "参加申請準備前").strip()
+
+    case_id, _ext = db.add_manual_case(
+        title, agency=(f.get("agency") or "").strip(), sector=sector, category=work)
+    fields = {
+        "assignee": (f.get("assignee") or "").strip(),
+        "work": work,
+        "apply_deadline": (f.get("apply_deadline") or "").strip(),
+        "bid_deadline": (f.get("bid_deadline") or "").strip(),
+        "open_date": (f.get("open_date") or "").strip(),
+        "note": (f.get("note") or "").strip(),
+    }
+    try:
+        db.set_application(case_id, status, **fields)
+    except ValueError:
+        db.set_application(case_id, "参加申請準備前", **fields)
+
+    created = next((_enrich_application(r) for r in db.list_applications(None)
+                    if r.get("case_id") == case_id), None)
+    return jsonify({"case": created})
+
+
 @app.route("/applications/restore", methods=["POST"])
 def applications_restore():
     """ブラウザ(localStorage)に保存された申請をサーバDBへ復元する。
@@ -492,7 +529,19 @@ def applications_restore():
             continue
         case_id = db.get_case_id_by_external(ext)
         if case_id is None:
-            continue  # 現在のDBに該当案件が無い（公開終了等）→スキップ
+            # 手動案件は案件本体ごと再生成（ext を維持）。公共スクレイプ案件は
+            # 公開終了とみなしスキップ。
+            if ext.startswith("manual:"):
+                db.upsert_cases([{
+                    "source": "manual", "external_id": ext,
+                    "title": (it.get("title") or "（無題の案件）"),
+                    "agency": (it.get("agency") or ""),
+                    "category": (it.get("work") or ""),
+                    "sector": (it.get("sector") or "民間"),
+                }])
+                case_id = db.get_case_id_by_external(ext)
+            if case_id is None:
+                continue  # 現在のDBに該当案件が無い（公開終了等）→スキップ
         fields = dict(
             applied_date=(it.get("applied_date") or "").strip(),
             note=(it.get("note") or "").strip(),
