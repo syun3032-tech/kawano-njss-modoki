@@ -182,6 +182,12 @@ def inject_data_health():
     return {"data_health": info}
 
 
+@app.route("/healthz")
+def healthz():
+    """軽量ヘルスチェック（DBに触れず即返す）。Renderスリープ防止のkeep-alive用。"""
+    return ("ok", 200, {"Content-Type": "text/plain; charset=utf-8"})
+
+
 @app.route("/")
 def cases():
     # 初期表示は関西中心（クエリ無しのランディング時は近畿をデフォルト）
