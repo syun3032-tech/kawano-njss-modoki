@@ -18,6 +18,57 @@
   var WORK = CFG.works || {};                              // {name:color}
   var METHODS = CFG.submit_methods || [];
 
+  /* ---------- 担当者の追加（ローカル保存・サーバ既定に積み増し） ----------
+     ASSIGNEES の既定はサーバ(db.ASSIGNEES)。揮発ホストでも消えないよう、画面から
+     足した担当者は localStorage に保存し、起動時に既定へマージする。
+     案件側の assignee は自由文字列で保存されるため、サーバ改修は不要。 */
+  var DEFAULT_ASSIGNEE_IDS = ASSIGNEES.map(function (a) { return a.id; });
+  var ADD_OPT = "__add_assignee__";
+  var ASSIGNEE_PALETTE = ["#16a34a", "#2563eb", "#ea580c", "#7c3aed", "#db2777",
+    "#0891b2", "#ca8a04", "#4338ca", "#b45309", "#0d9488", "#65a30d", "#9333ea"];
+  function pickAssigneeColor() {
+    var used = {}; ASSIGNEES.forEach(function (a) { used[a.color] = 1; });
+    for (var i = 0; i < ASSIGNEE_PALETTE.length; i++) if (!used[ASSIGNEE_PALETTE[i]]) return ASSIGNEE_PALETTE[i];
+    return ASSIGNEE_PALETTE[ASSIGNEES.length % ASSIGNEE_PALETTE.length];
+  }
+  function insertAssignee(a) {
+    // 「未割当」は常に末尾。新規担当者はその直前に差し込む。
+    ACOLOR[a.id] = a.color;
+    var idx = -1;
+    for (var i = 0; i < ASSIGNEES.length; i++) if (ASSIGNEES[i].id === "未割当") { idx = i; break; }
+    if (idx >= 0) ASSIGNEES.splice(idx, 0, a); else ASSIGNEES.push(a);
+  }
+  function saveCustomAssignees() {
+    var custom = ASSIGNEES.filter(function (a) { return DEFAULT_ASSIGNEE_IDS.indexOf(a.id) < 0; })
+      .map(function (a) { return { id: a.id, color: a.color }; });
+    try { localStorage.setItem("kawanoAssignees", JSON.stringify(custom)); } catch (e) {}
+  }
+  function loadCustomAssignees() {
+    var raw; try { raw = JSON.parse(localStorage.getItem("kawanoAssignees")); } catch (e) { return; }
+    if (!Array.isArray(raw)) return;
+    raw.forEach(function (a) {
+      if (!a || !a.id || a.id === "未割当") return;
+      if (ASSIGNEES.some(function (x) { return x.id === a.id; })) return;
+      insertAssignee({ id: a.id, color: a.color || pickAssigneeColor() });
+    });
+  }
+  // 担当者を1人追加（名前を尋ねる）。追加/既存ならその名前を、中止なら null を返す。
+  function addAssigneePrompt() {
+    var name = (window.prompt("追加する担当者の名前を入力してください（例: 田中さん）") || "").trim();
+    if (!name) return null;
+    if (name === "未割当") { alert("「未割当」は予約名のため追加できません。"); return null; }
+    if (ASSIGNEES.some(function (a) { return a.id === name; })) { alert("「" + name + "」は既に登録されています。"); return name; }
+    insertAssignee({ id: name, color: pickAssigneeColor() });
+    saveCustomAssignees();
+    return name;
+  }
+  // 担当者セレクトの <option> 群（末尾に「＋ 追加」を付ける）。両モーダル共通。
+  function assigneeOptions(sel) {
+    return ASSIGNEES.map(function (a) {
+      return '<option value="' + esc(a.id) + '"' + (a.id === sel ? " selected" : "") + ">" + esc(a.id) + "</option>";
+    }).join("") + '<option value="' + ADD_OPT + '">＋ 新しい担当者を追加…</option>';
+  }
+
   /* ---------- 共通ヘルパー（reference の es/en/er/ed/ei/ec と同等） ---------- */
   var fmtMan = function (y) { return Math.round((Number(y) || 0) / 1e4).toLocaleString("ja-JP") + "万"; };
   var toYen = function (s) { return Number(String(s == null ? "" : s).replace(/[^\d]/g, "")) || 0; };
@@ -145,7 +196,9 @@
       ASSIGNEES.map(function (a) {
         return '<button class="chip2' + (state.assignee === a.id ? " on" : "") + '" data-as="' + esc(a.id) + '" style="--c:' + a.color + '">' +
           '<span class="dot" style="background:' + a.color + '"></span>' + esc(a.id) + " <b>" + (counts[a.id] || 0) + "</b></button>";
-      }).join("") + "</div>";
+      }).join("") +
+      '<button class="chip2" data-addas="1" title="担当者を追加" style="--c:#64748b;border-style:dashed">＋ 担当者</button>' +
+      "</div>";
 
     // 状態（ステータス）で絞る。担当の絞り込み後(rows)の件数で表示。
     var scnt = {}; rows.forEach(function (c) { scnt[c.status] = (scnt[c.status] || 0) + 1; });
@@ -350,6 +403,11 @@
     // 担当チップ
     Array.prototype.forEach.call(document.querySelectorAll(".chip2"), function (b) {
       b.addEventListener("click", function () {
+        if (b.hasAttribute("data-addas")) {            // ＋担当者を追加
+          var added = addAssigneePrompt();
+          if (added) state.assignee = added;            // 追加した担当で絞り込む
+          render(); return;
+        }
         if (b.hasAttribute("data-st")) {
           var v = b.getAttribute("data-st");
           if (!v) state.statuses = [];                       // 「すべて」で解除
@@ -473,7 +531,7 @@
       return '<div class="m-grid">' +
         fld("元機関（発注機関）", '<input name="agency_override" value="' + esc(c.agency || "") + '" placeholder="発注機関名（修正可）">', "full") +
         fld("状況", '<select name="status">' + opt(STATUSES.map(function (s) { return s.id; }), c.status) + "</select>") +
-        fld("担当者", '<select name="assignee">' + opt(ASSIGNEES.map(function (a) { return a.id; }), c.assignee || "未割当") + "</select>") +
+        fld("担当者", '<select name="assignee" class="assignee-sel" data-prev="' + esc(c.assignee || "未割当") + '">' + assigneeOptions(c.assignee || "未割当") + "</select>") +
         fld("工事カテゴリ", '<select name="work"><option value="">（案件の業種）</option>' + opt(Object.keys(WORK), c.work || c.work_eff) + "</select>") +
         fld("入札タイプ", '<select name="submit_method"><option value="">—</option>' + opt(METHODS, c.submit_method) + "</select>") +
         fld("参加申請 期限", '<input type="date" name="apply_deadline" value="' + esc(c.apply_deadline) + '">') +
@@ -675,7 +733,7 @@
       '<div class="m-fld full"><span>区分</span><div class="tagpicks" id="secPick">' + secPick + "</div></div>" +
       fld("発注機関・取引先", '<input name="agency" placeholder="発注者／客先名（任意）">', "full") +
       fld("工事カテゴリ", '<select name="work"><option value="">（未指定）</option>' + opt(Object.keys(WORK), "") + "</select>") +
-      fld("担当者", '<select name="assignee">' + opt(ASSIGNEES.map(function (a) { return a.id; }), "未割当") + "</select>") +
+      fld("担当者", '<select name="assignee" class="assignee-sel" data-prev="未割当">' + assigneeOptions("未割当") + "</select>") +
       fld("状態", '<select name="status">' + opt(STATUSES.map(function (s) { return s.id; }), "参加申請準備前") + "</select>") +
       fld("参加申請 期限", '<input type="date" name="apply_deadline">') +
       fld("入札書提出 期限", '<input type="date" name="bid_deadline">') +
@@ -784,6 +842,24 @@
       }).catch(function () {});
   }
 
+  // 担当者セレクトで「＋ 新しい担当者を追加…」を選んだら、その場で追加する。
+  // モーダルは再描画されるため、document へ委譲して一度だけ束ねる。
+  document.addEventListener("change", function (e) {
+    var sel = e.target;
+    if (!sel || !sel.classList || !sel.classList.contains("assignee-sel")) return;
+    if (sel.value === ADD_OPT) {
+      var prev = sel.getAttribute("data-prev") || "未割当";
+      var added = addAssigneePrompt();
+      var pick = added || prev;
+      sel.innerHTML = assigneeOptions(pick);   // 追加分を反映してオプションを作り直す
+      sel.value = pick;
+      sel.setAttribute("data-prev", pick);
+    } else {
+      sel.setAttribute("data-prev", sel.value);
+    }
+  });
+
+  loadCustomAssignees();   // 画面から足した担当者を既定にマージ
   loadState();   // 直前の絞り込み・並び替え・タブを復元してから描画
   render();
   restoreCompanies();
