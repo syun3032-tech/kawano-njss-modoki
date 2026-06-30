@@ -861,6 +861,14 @@
 
   loadCustomAssignees();   // 画面から足した担当者を既定にマージ
   loadState();   // 直前の絞り込み・並び替え・タブを復元してから描画
+  // サイドバーの「公共 管理シート / 民間 管理シート」から来た場合は、
+  // URL の ?sheet= で開くシート（タブ）を上書きする。保存状態より優先。
+  (function () {
+    var m = /[?&]sheet=([^&]+)/.exec(location.search);
+    if (!m) return;
+    var sheet = decodeURIComponent(m[1]);
+    if (sheet === "公共" || sheet === "民間") state.tab = sheet;
+  })();
   render();
   restoreCompanies();
 })();
