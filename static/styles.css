@@ -577,6 +577,18 @@ tr.row-check td { background: #fffaf0; }
 .m-ai-rs{margin:0;padding-left:18px;font-size:13px;color:#44403c;display:flex;flex-direction:column;gap:3px}
 .m-ai .ngbtn{background:#dc2626;color:#fff;border-color:#dc2626;align-self:flex-start}
 .m-ai .ngbtn:hover{background:#b91c1c}
+/* 要望⑦STEP2: AI案件概要パネル */
+.m-ai.sum{background:#f5f3ff;border-color:#ddd6fe}
+.sum-scope{margin:0;font-size:13px;color:#4c1d95;font-weight:600}
+.sum-sub{font-size:11.5px;font-weight:700;color:#7c3aed;margin-top:4px}
+.sum-cats{display:flex;flex-wrap:wrap;gap:6px}
+.sum-cat{font-size:11.5px;background:#ede9fe;color:#6d28d9;border-radius:999px;padding:2px 9px;font-weight:600}
+/* 要望⑨①: URL自動入力の行 */
+.url-row{display:flex;gap:8px;align-items:center}
+.url-row input{flex:1;min-width:0}
+.url-msg{font-size:12px;color:#a8a29e;margin-top:4px;display:block}
+.url-msg.ok{color:#16a34a}
+.url-msg.err{color:#dc2626}
 .m-ai .dim{color:#a8a29e}
 .btn.ghost{background:transparent;border-color:#e7e5e4;color:#78716c}
 .m-tabs{display:flex;gap:6px;margin:0 0 14px}

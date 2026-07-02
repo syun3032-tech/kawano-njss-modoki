@@ -500,7 +500,28 @@
     var mtab = "情報";
     var chOpen = false, chQ = "", chPartner = false;
     var aiResult = null, aiBusy = false;   // AI応募可否判定の結果
+    var summaryResult = null, summaryBusy = false;   // AI案件概要（要望⑦STEP2）
     var opt = function (arr, sel) { return arr.map(function (v) { return '<option value="' + esc(v) + '"' + (v === sel ? " selected" : "") + ">" + esc(v) + "</option>"; }).join(""); };
+
+    // 要望⑦STEP2: AI案件概要パネル（公告を読み、工事内容・規模・要求資格を要約）
+    function summaryPanel() {
+      if (summaryBusy) return '<div class="m-ai busy"><div class="ai-loading">' +
+        '<div class="ai-loading-msg">AIが公告を読み込み、案件概要を作成中<span class="ai-dots"><i>.</i><i>.</i><i>.</i></span></div>' +
+        '<div class="ai-bar"></div><div class="ai-loading-sub">10〜30秒ほどかかります。</div></div></div>';
+      if (!summaryResult) return '<div class="m-ai"><button type="button" class="btn small" id="sumBtn">AIで案件概要を作成</button>' +
+        '<small>公告を読み、工事内容・規模・要求資格などを要約します（協力会社の選定にも活用）</small></div>';
+      if (summaryResult.enabled === false) return '<div class="m-ai dim">AI概要はAIプラン（GEMINI_API_KEYとアカウント許可）で使えます。</div>';
+      if (summaryResult.error) return '<div class="m-ai dim">' + esc(summaryResult.error) + ' <button type="button" class="btn ghost small" id="sumRedo">再作成</button></div>';
+      var ov = (summaryResult.overview || []).map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("");
+      var kd = (summaryResult.key_dates || []).map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("");
+      var sc = (summaryResult.suited_categories || []).map(function (x) { return '<span class="sum-cat">' + esc(x) + "</span>"; }).join("");
+      return '<div class="m-ai res sum"><div class="m-ai-top"><b>AI案件概要</b><button type="button" class="btn ghost small" id="sumRedo">再作成</button></div>' +
+        (summaryResult.scope ? '<p class="sum-scope">' + esc(summaryResult.scope) + "</p>" : "") +
+        (ov ? '<ul class="m-ai-rs">' + ov + "</ul>" : "") +
+        (kd ? '<div class="sum-sub">重要日程</div><ul class="m-ai-rs">' + kd + "</ul>" : "") +
+        (sc ? '<div class="sum-sub">この工事に適した工事カテゴリ（見積タブの依頼先選びに反映）</div><div class="sum-cats">' + sc + "</div>" : "") +
+        "</div>";
+    }
 
     // AI応募可否判定パネル（公告を読み、自社の等級・資格と照合してOK/NGを出す）
     function aiPanel() {
@@ -536,7 +557,7 @@
           '<span class="tl-label">' + s.label + '</span><span class="tl-date">' + (s.date ? md(s.date) : "—") + '</span>' +
           '<span class="tl-days" style="color:' + (d == null ? "#a8a29e" : b.fg) + '">' + (d == null ? "" : daysLabel(d)) + "</span></div>";
       }).join("");
-      return '<div class="m-grid">' +
+      return summaryPanel() + '<div class="m-grid">' +
         fld("元機関（発注機関）", '<input name="agency_override" value="' + esc(c.agency || "") + '" placeholder="発注機関名（修正可）">', "full") +
         fld("状況", '<select name="status">' + opt(STATUSES.map(function (s) { return s.id; }), c.status) + "</select>") +
         fld("担当者", '<select name="assignee" class="assignee-sel" data-prev="' + esc(c.assignee || "未割当") + '">' + assigneeOptions(c.assignee || "未割当") + "</select>") +
@@ -561,10 +582,24 @@
         '<div class="mb exp ' + (exp == null ? "" : exp < 0 ? "neg" : "pos") + '"><span>想定利益</span><b>' + (exp == null ? "—" : fmtMan(exp)) + "</b><small>入札−採用見積</small></div></div>";
       var asked = {}; c.partners.forEach(function (q) { asked[q.company] = 1; });
       var work = c.work || c.work_eff;
+      // 要望⑦STEP3: 案件の工事カテゴリ・エリア・AI概要の推奨カテゴリと突き合わせて
+      // 「この工事に合う会社」を上位に並べる（選定支援）。
+      var suited = (summaryResult && summaryResult.suited_categories) || [];
+      function coScore(co) {
+        var s = (co.rating || 0) * 0.5;
+        if (co.partner) s += 2;
+        var tags = co.tags || [];
+        if (work && tags.indexOf(work) >= 0) s += 3;               // 案件の業種に一致
+        suited.forEach(function (cat) { if (tags.indexOf(cat) >= 0) s += 2; });  // AI推奨カテゴリに一致
+        var ar = parseArea(co.area);                                // エリア一致（地方＋詳細）
+        if (c.region && ar.regions.indexOf(c.region) >= 0) s += 3;
+        if (c.prefecture && co.area && co.area.indexOf(c.prefecture) >= 0) s += 3;
+        return s;
+      }
       var clist = chQ ? COMPANIES.filter(function (co) { return ([co.name, co.area].concat(co.tags || []).join(" ")).indexOf(chQ) >= 0; })
-        : COMPANIES.filter(function (co) { return (co.tags || []).indexOf(work) >= 0 || co.partner; });
+        : COMPANIES.filter(function (co) { return (co.tags || []).indexOf(work) >= 0 || co.partner || (suited.length && (co.tags || []).some(function (t) { return suited.indexOf(t) >= 0; })); });
       if (chPartner) clist = clist.filter(function (co) { return co.partner; });
-      clist = clist.slice().sort(function (a, b) { return (b.rating || 0) - (a.rating || 0); });
+      clist = clist.slice().sort(function (a, b) { return coScore(b) - coScore(a); });
       var chooser = '<button type="button" class="mq-chtoggle" id="chToggle">＋ ① 依頼先を選ぶ（おすすめ＝この工事に合う会社）</button>';
       if (chOpen) {
         chooser += '<div class="mq-chooser"><input id="chSearch" class="mq-chsearch" placeholder="会社をさがす（空欄＝おすすめ）" value="' + esc(chQ) + '">' +
@@ -633,8 +668,20 @@
         });
       });
       if (mtab === "見積") bindQuote(root);
+      if (mtab === "情報") {
+        var sb = root.querySelector("#sumBtn"); if (sb) sb.onclick = function () { pullInfo(root); runSummary(root, false); };
+        var sr = root.querySelector("#sumRedo"); if (sr) sr.onclick = function () { runSummary(root, true); };
+      }
       bindAi(root);
       root.querySelector(".m-save").onclick = function () { if (mtab === "情報") pullInfo(root); else pullMoney(root); saveCase(c); };
+    }
+    function runSummary(root, refresh) {
+      summaryBusy = true; redraw(root);
+      var url = "/case/" + c.case_id + "/summary" + (refresh ? "?refresh=1" : "");
+      fetch(url, { method: "POST", headers: { "X-Requested-With": "XMLHttpRequest" } })
+        .then(function (r) { if (r.status === 401 || r.status === 403) return { enabled: false }; return r.json(); })
+        .then(function (j) { summaryResult = j || { error: true }; summaryBusy = false; redraw(root); })
+        .catch(function () { summaryResult = { enabled: true, error: "AI概要の生成に失敗しました。" }; summaryBusy = false; redraw(root); });
     }
     function runAi(root, refresh) {
       aiBusy = true; redraw(root);
@@ -826,7 +873,9 @@
       '<div class="m-fld full"><span>対応エリア（地方）<em style="font-weight:400;color:var(--text-tertiary)"> 複数選択可</em></span><div class="tagpicks" id="regionPick">' + regionBtns + "</div></div>" +
       fld("対応可能エリアの詳細", '<input name="area_detail" value="' + esc(parsedArea.detail) + '" placeholder="例: 大阪府のみ対応可能 / 兵庫県東部 等">', "full") +
       fld("電話", '<input name="tel" value="' + esc(c.tel) + '">') +
-      fld("URL", '<input name="url" value="' + esc(c.url) + '">', "full") +
+      '<label class="m-fld full"><span>URL <em style="font-weight:400;color:var(--text-tertiary)"> 貼り付けて「AIで取得」で会社情報を下書き（要望⑨①）</em></span>' +
+        '<span class="url-row"><input name="url" value="' + esc(c.url) + '"><button type="button" class="btn small" id="coExtract">AIで取得</button></span>' +
+        '<span class="url-msg" id="coExtractMsg"></span></label>' +
       fld("特徴・メモ", '<input name="note" value="' + esc(c.note) + '">', "full") +
       '<label class="m-check"><input type="checkbox" name="partner"' + (c.partner ? " checked" : "") + "> ★よく頼む</label>" +
       '<div class="m-fld"><span>評価</span><div class="stars" id="starPick">' + stars + "</div></div>" +
@@ -843,6 +892,33 @@
       });
       Array.prototype.forEach.call(root.querySelectorAll(".tagpick"), function (b) {
         b.addEventListener("click", function () { b.classList.toggle("on"); });
+      });
+      // 要望⑨①: URLからAIで会社情報を取得してフォームに下書きする。
+      var ex = root.querySelector("#coExtract");
+      if (ex) ex.addEventListener("click", function () {
+        var urlEl = root.querySelector('[name="url"]'), msg = root.querySelector("#coExtractMsg");
+        var url = urlEl ? urlEl.value.trim() : "";
+        if (!url) { if (msg) msg.textContent = "URLを入力してください。"; return; }
+        ex.disabled = true; if (msg) { msg.className = "url-msg"; msg.textContent = "AIが取得中…（10〜20秒）"; }
+        fetch("/companies/extract", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url }) })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            ex.disabled = false;
+            if (d.enabled === false) { if (msg) { msg.className = "url-msg err"; msg.textContent = d.reason || "AIが無効です。"; } return; }
+            if (d.error) { if (msg) { msg.className = "url-msg err"; msg.textContent = d.error; } return; }
+            var set = function (n, v) { var e = root.querySelector('[name="' + n + '"]'); if (e && v) e.value = v; };
+            set("name", d.name); set("tel", d.tel); set("area_detail", d.area_detail); set("note", d.note);
+            // 地方チップ
+            (d.regions || []).forEach(function (r) {
+              var b = root.querySelector('#regionPick .regionpick[data-r="' + r + '"]'); if (b) b.classList.add("on");
+            });
+            // 工事カテゴリチップ
+            (d.tags || []).forEach(function (t) {
+              var b = root.querySelector('#tagPick .tagpick[data-t="' + t + '"]'); if (b) b.classList.add("on");
+            });
+            if (msg) { msg.className = "url-msg ok"; msg.textContent = "取得しました。内容を確認して保存してください。"; }
+          })
+          .catch(function () { ex.disabled = false; if (msg) { msg.className = "url-msg err"; msg.textContent = "取得に失敗しました。"; } });
       });
       root.querySelector(".m-save").addEventListener("click", function () {
         var g = function (n) { var e = root.querySelector('[name="' + n + '"]'); return e ? e.value.trim() : ""; };

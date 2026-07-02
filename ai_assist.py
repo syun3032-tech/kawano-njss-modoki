@@ -288,3 +288,140 @@ def assist(case: dict, profile: dict | None = None,
     data["model"] = _model()
     data["source"] = "pdf_full" if notice_text else "description"
     return data
+
+
+# ============================================================
+#  将来機能: 会社サイト自動入力（⑨①）／案件AI概要（⑦STEP2）
+# ============================================================
+import re as _re
+
+
+def _call_gemini_schema(user_text: str, schema: dict, system: str) -> dict[str, Any]:
+    """任意のスキーマ・システム指示で Gemini を呼ぶ汎用版（_call_gemini の一般化）。"""
+    key, model = _api_key(), _model()
+    url = f"{_API_BASE}/{model}:generateContent?key={key}"
+    body = {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": user_text}]}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "responseSchema": schema,
+            "temperature": 0.2,
+        },
+    }
+    req = urllib.request.Request(
+        url, data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=60) as res:
+        data = json.loads(res.read().decode("utf-8"))
+    cand = (data.get("candidates") or [{}])[0]
+    parts = (cand.get("content") or {}).get("parts") or [{}]
+    return json.loads(parts[0].get("text", "{}"))
+
+
+def _fetch_html_text(url: str, timeout: int = 20) -> str:
+    """会社サイト等のHTMLを取得し本文テキスト化（bs4不要・stdlibのみ）。失敗時 ""。"""
+    if not url or not url.lower().startswith(("http://", "https://")):
+        return ""
+    _MAX = 3 * 1024 * 1024  # 3MB上限
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            raw = res.read(_MAX + 1)[:_MAX]
+        try:
+            html = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            html = raw.decode("cp932", "ignore")
+    except Exception:  # noqa: BLE001
+        return ""
+    html = _re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", html)
+    text = _re.sub(r"(?s)<[^>]+>", " ", html)
+    text = _re.sub(r"&[a-z]+;", " ", text)
+    text = _re.sub(r"\s+", " ", text).strip()
+    return text[:8000]
+
+
+_COMPANY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string", "description": "会社名（正式名称。無ければ空）"},
+        "tel": {"type": "string", "description": "代表電話番号（無ければ空）"},
+        "regions": {"type": "array", "items": {"type": "string"},
+                    "description": "対応地方を次から選ぶ(複数可): 北海道・東北/関東/甲信越・北陸/東海/近畿/中国/四国/九州・沖縄"},
+        "area_detail": {"type": "string", "description": "対応可能エリアの詳細（例: 大阪府中心 等）"},
+        "tags": {"type": "array", "items": {"type": "string"},
+                 "description": "工事カテゴリを次から選ぶ(複数可): 電気工事/照明/LED/空調/防犯/カメラ/通信/弱電/管工事/太陽光/高圧受電/リフォーム/建築/制御盤/足場/清掃/IT/システム/商社/卸/土木"},
+        "note": {"type": "string", "description": "特徴・強み（施工実績や得意分野を1〜2文で）"},
+    },
+    "required": ["name", "tel", "regions", "area_detail", "tags", "note"],
+}
+_COMPANY_SYSTEM = (
+    "あなたは建設・電気工事の協力会社データベースを整備する担当者です。"
+    "与えられた会社ホームページの本文から、会社名・電話・対応地方・対応エリア詳細・"
+    "工事カテゴリ・特徴を抽出し、指定JSONスキーマで返します。"
+    "地方と工事カテゴリは必ず指定の選択肢の語のみを使い、該当が無ければ空配列にすること。"
+    "本文に無い情報は推測せず空にすること。日本語で記述。"
+)
+
+
+def extract_company(url: str) -> dict[str, Any]:
+    """協力会社サイトのURLから会社情報を抽出（要望⑨①）。"""
+    if not is_enabled():
+        return {"enabled": False}
+    text = _fetch_html_text(url)
+    if not text:
+        return {"enabled": True, "error": "ページ本文を取得できませんでした。URLをご確認ください。"}
+    try:
+        data = _call_gemini_schema("会社ホームページ本文:\n" + text, _COMPANY_SCHEMA, _COMPANY_SYSTEM)
+    except Exception:  # noqa: BLE001
+        return {"enabled": True, "error": "AI抽出に失敗しました。時間をおいて再度お試しください。"}
+    data["enabled"] = True
+    return data
+
+
+_SUMMARY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "overview": {"type": "array", "items": {"type": "string"},
+                     "description": "案件概要を5〜8項目の箇条書きで（工事内容/場所/規模/工期/入札方式/要求資格・等級/提出方法 等、分かるもの）"},
+        "scope": {"type": "string", "description": "どんな工事かを1〜2文で"},
+        "key_dates": {"type": "array", "items": {"type": "string"},
+                      "description": "重要な日程（公告/参加申請/入札/開札 等、分かるもの）"},
+        "suited_categories": {"type": "array", "items": {"type": "string"},
+                              "description": "この工事に適した工事カテゴリ（協力会社選定用・複数可）。選択肢: 電気工事/照明/LED/空調/防犯/カメラ/通信/弱電/管工事/太陽光/高圧受電/リフォーム/建築/制御盤/足場/清掃/IT/システム/商社/卸/土木"},
+    },
+    "required": ["overview", "scope", "key_dates", "suited_categories"],
+}
+_SUMMARY_SYSTEM = (
+    "あなたは公共入札（電気工事系）の案件概要を作成する専門家です。"
+    "公告本文と案件情報から、担当者が一目で把握できる概要を作成します。"
+    "一般論でなくこの案件の実態に即して具体的に。指定JSONスキーマで日本語出力。"
+    "suited_categories は指定の語のみを使うこと。"
+)
+
+
+def summarize_case(case: dict) -> dict[str, Any]:
+    """案件の概要をAIで生成（要望⑦STEP2）。公告PDFがあれば全文を読ませる。"""
+    if not is_enabled():
+        return {"enabled": False}
+    notice = _fetch_pdf_text(case.get("detail_url", ""))
+    lines = [
+        "案件名: " + str(case.get("title", "")),
+        "発注機関: " + str(case.get("agency", "")),
+        "都道府県: " + str(case.get("prefecture", "")),
+        "工事カテゴリ: " + str(case.get("category", "")),
+        "入札方式: " + str(case.get("bid_method", "")),
+        "公告日: " + str(case.get("announced_date", "")),
+        "締切: " + str(case.get("deadline", "")),
+        "予定価格: " + str(case.get("budget", "")),
+    ]
+    if notice:
+        lines.append("\n【公告本文（抜粋）】\n" + notice)
+    try:
+        data = _call_gemini_schema("\n".join(lines), _SUMMARY_SCHEMA, _SUMMARY_SYSTEM)
+    except Exception:  # noqa: BLE001
+        return {"enabled": True, "error": "AI概要の生成に失敗しました。時間をおいて再度お試しください。"}
+    data["enabled"] = True
+    data["model"] = _model()
+    data["source"] = "pdf_full" if notice else "description"
+    return data

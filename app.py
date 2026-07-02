@@ -402,6 +402,58 @@ def case_ai_assist(case_id: int):
     return jsonify(result)
 
 
+@app.route("/case/<int:case_id>/summary", methods=["POST"])
+def case_summary(case_id: int):
+    """【要望⑦STEP2】案件のAI概要を生成して返す（公告PDFを読ませる）。
+
+    ai_assist テーブルに external_id="sum:<ext>" でキャッシュ（再課金しない）。
+    """
+    import json
+    if not auth.can_use_ai():
+        return jsonify({"enabled": False,
+                        "reason": "このアカウントではAIモードが有効化されていません。"})
+    case = db.get_case(case_id)
+    if not case:
+        abort(404)
+    ext = case.get("external_id", "")
+    cache_key = "sum:" + ext if ext else ""
+    refresh = request.args.get("refresh") == "1"
+    if not refresh and cache_key:
+        cached = db.get_ai_assist(cache_key)
+        if cached:
+            data = json.loads(cached["payload"])
+            data["cached"] = True
+            return jsonify(data)
+    try:
+        result = ai_assist.summarize_case(case)
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger(__name__).warning("ai summary failed", exc_info=True)
+        return jsonify({"enabled": True, "error": str(e)[:200]}), 200
+    if result.get("enabled") and not result.get("error") and cache_key:
+        db.set_ai_assist(cache_key, json.dumps(result, ensure_ascii=False),
+                         result.get("model", ""))
+    result["cached"] = False
+    return jsonify(result)
+
+
+@app.route("/companies/extract", methods=["POST"])
+def company_extract():
+    """【要望⑨①】協力会社サイトのURLから会社情報をAI抽出して返す（保存前の下書き）。"""
+    if not auth.can_use_ai():
+        return jsonify({"enabled": False,
+                        "reason": "このアカウントではAIモードが有効化されていません。"})
+    data = request.get_json(silent=True) or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"enabled": True, "error": "URLを入力してください。"}), 200
+    try:
+        result = ai_assist.extract_company(url)
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger(__name__).warning("company extract failed", exc_info=True)
+        return jsonify({"enabled": True, "error": str(e)[:200]}), 200
+    return jsonify(result)
+
+
 @app.route("/case/<int:case_id>/apply", methods=["POST"])
 def apply_case(case_id: int):
     """案件の入札参加申請ステータスを登録・更新する。"""
