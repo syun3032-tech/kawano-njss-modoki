@@ -202,6 +202,7 @@ def cases():
     bid_method = [b for b in request.args.getlist("bid_method") if b.strip()]
     spec_status = request.args.get("spec_status", "").strip()
     q = request.args.get("q", "").strip()
+    agency = request.args.get("agency", "").strip()   # 発注機関でしぼる（要望⑧）
     # 新着期間: ""=指定なし / today=本日公告 / week=直近7日。nav の new=1 は week 扱い。
     fresh = request.args.get("fresh", "").strip()
     if request.args.get("new") == "1" and not fresh:
@@ -243,6 +244,7 @@ def cases():
         open_only=open_only,
         hide_closed=not show_closed,
         q=q,
+        agency=agency,
         announced_after=announced_after,
         # 監視機関でチェックを外した発注機関の案件は最初から除外する
         exclude_agencies=db.list_agency_exclusions(),
@@ -290,11 +292,18 @@ def cases():
                 "desc": "地方・都道府県・業種・予定価格などで絞り込めます。"}
         nav_active = "cases"
 
+    # 既に申請管理へ追加済み／NGにした案件を一覧で見分けられるよう external_id を渡す（要望②）
+    apps = db.list_applications(None)
+    added_eids = [a.get("external_id") for a in apps if a.get("external_id")]
+    ng_eids = [a.get("external_id") for a in apps if a.get("external_id") and a.get("status") == "NG"]
+
     return render_template(
         "cases.html",
         view=view,
         nav_active=nav_active,
         rows=rows,
+        added_eids=added_eids,
+        ng_eids=ng_eids,
         regions=REGIONS,
         # 選択中の地方に応じた都道府県候補（未選択なら全国）
         pref_options=prefectures_in(region) if region else [],
@@ -314,7 +323,7 @@ def cases():
             "region": region, "prefecture": prefecture, "category": category,
             "procurement_type": procurement_type, "bid_method": bid_method,
             "spec_status": spec_status, "budget_min": budget_min,
-            "open": open_only, "q": q, "sort": sort, "new": new_only,
+            "open": open_only, "q": q, "agency": agency, "sort": sort, "new": new_only,
             "fresh": fresh,
         },
     )
@@ -772,6 +781,17 @@ def agency_toggle():
         return jsonify({"error": "name required"}), 400
     db.set_agency_excluded(name, excluded=not included)  # 含めない＝除外
     return jsonify({"name": name, "included": included,
+                    "excluded": sorted(db.list_agency_exclusions())})
+
+
+@app.route("/agencies/toggle-bulk", methods=["POST"])
+def agency_toggle_bulk():
+    """表示中の機関をまとめてON/OFF（要望③）。names に機関名の配列を渡す。"""
+    data = request.get_json(silent=True) or {}
+    names = [str(n).strip() for n in (data.get("names") or []) if str(n).strip()]
+    included = bool(data.get("included"))
+    db.set_agencies_excluded(names, excluded=not included)  # 含める=除外解除
+    return jsonify({"count": len(names), "included": included,
                     "excluded": sorted(db.list_agency_exclusions())})
 
 

@@ -365,6 +365,7 @@ def _build_case_filter(
     open_only: bool = False,
     hide_closed: bool = False,
     q: str = "",
+    agency: str = "",
     announced_after: str | None = None,
     exclude_agencies: list[str] | set[str] | None = None,
 ) -> tuple[str, list[Any]]:
@@ -409,6 +410,10 @@ def _build_case_filter(
         # 新着フィルタ（公告日がこの日以降）。SQL側で行うことで件数も正確・上限の影響を受けない。
         where.append("announced_date != '' AND announced_date >= ?")
         params.append(announced_after)
+    # 発注機関でしぼる（要望⑧）。機関名の部分一致。
+    if agency and agency.strip():
+        where.append("agency LIKE ?")
+        params.append(f"%{agency.strip()}%")
     # キーワードは空白/カンマ区切りで複数可。各語が title/agency いずれかに一致（語間OR）
     terms = [t for t in q.replace("，", ",").replace("、", ",").replace(",", " ").split() if t]
     if terms:
@@ -443,6 +448,7 @@ def list_cases(
     open_only: bool = False,
     hide_closed: bool = False,
     q: str = "",
+    agency: str = "",
     announced_after: str | None = None,
     exclude_agencies: list[str] | set[str] | None = None,
     sort: str = "deadline",
@@ -463,7 +469,7 @@ def list_cases(
         region=region, prefecture=prefecture, category=category,
         procurement_type=procurement_type, bid_method=bid_method,
         spec_status=spec_status, budget_min=budget_min, open_only=open_only,
-        hide_closed=hide_closed, q=q, announced_after=announced_after,
+        hide_closed=hide_closed, q=q, agency=agency, announced_after=announced_after,
         exclude_agencies=exclude_agencies,
     )
     # 締切が空文字の案件は末尾に回す
@@ -595,6 +601,26 @@ def set_agency_excluded(name: str, excluded: bool) -> None:
             conn.execute("INSERT OR IGNORE INTO agency_exclusions (name) VALUES (?)", (name,))
         else:
             conn.execute("DELETE FROM agency_exclusions WHERE name = ?", (name,))
+        conn.commit()
+    _push_exclusions()
+
+
+def set_agencies_excluded(names: list[str], excluded: bool) -> None:
+    """複数機関の除外ON/OFFを一括で行う（要望③・一括ON/OFF）。
+
+    現在の除外集合に対して、渡された機関名の部分集合だけを追加／解除する
+    （replace_agency_exclusions と違い、絞り込み表示中の一部だけを操作できる）。
+    """
+    clean = [str(n).strip() for n in (names or []) if str(n).strip()]
+    if not clean:
+        return
+    with _connect() as conn:
+        if excluded:
+            conn.executemany("INSERT OR IGNORE INTO agency_exclusions (name) VALUES (?)",
+                             [(n,) for n in clean])
+        else:
+            conn.executemany("DELETE FROM agency_exclusions WHERE name = ?",
+                             [(n,) for n in clean])
         conn.commit()
     _push_exclusions()
 

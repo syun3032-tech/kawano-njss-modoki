@@ -83,6 +83,10 @@
     <span>キーワード <em>(空白区切りで複数可・いずれか一致)</em></span>
     <input type="text" name="q" value="{{ selected.q }}" placeholder="例: 受変電 LED 保安管理">
   </label>
+  <label class="field grow">
+    <span>発注機関 <em>(機関名で絞り込み)</em></span>
+    <input type="text" name="agency" value="{{ selected.agency }}" placeholder="例: 法務省 / 大阪管区気象台">
+  </label>
   <label class="field">
     <span>並び替え</span>
     <select name="sort">
@@ -119,10 +123,20 @@
   <a class="btn" style="margin-left:auto" href="{{ url_for('export_csv') }}">CSVダウンロード ↓</a>
 </div>
 
+{# 一覧の表示コントロール（要望②・⑤）。JSが localStorage と連動して制御する。 #}
+<div class="list-tools" id="listTools">
+  <label class="lt-check"><input type="checkbox" id="hideAdded"> 管理シート追加済みを隠す <b id="cntAdded"></b></label>
+  <label class="lt-check"><input type="checkbox" id="hideNg"> NGにした案件を隠す <b id="cntNg"></b></label>
+  <details class="lt-history" id="histBox">
+    <summary>最近見た案件 <b id="cntHist"></b></summary>
+    <div class="lt-history-list" id="histList"></div>
+  </details>
+</div>
+
 {% if rows %}
 <div class="case-list">
   {% for c in rows %}
-  <a class="case-row {{ 'closed' if c.deadline and c.deadline < today }}" href="{{ url_for('case_detail', case_id=c.id) }}">
+  <a class="case-row {{ 'closed' if c.deadline and c.deadline < today }}" href="{{ url_for('case_detail', case_id=c.id) }}" data-id="{{ c.id }}" data-eid="{{ c.external_id }}" data-title="{{ c.title }}">
     <div class="cr-main">
       <div class="cr-title">{{ c.title }}</div>
       <div class="cr-meta">
@@ -176,6 +190,9 @@
 {% endblock %}
 
 {% block scripts %}
+<script id="addedEids" type="application/json">{{ added_eids | tojson }}</script>
+<script id="ngEids" type="application/json">{{ ng_eids | tojson }}</script>
+<script src="{{ url_for('static', filename='cases.js') }}?v=1"></script>
 <script>
   const regionSel = document.getElementById('region');
   const prefSel = document.getElementById('prefecture');

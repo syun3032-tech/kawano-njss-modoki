@@ -17,7 +17,16 @@
   </div>
 </form>
 
-<div class="result-head"><span class="count">{{ rows|length }} 機関</span></div>
+<div class="result-head">
+  <span class="count">{{ rows|length }} 機関</span>
+  {% if rows %}
+  <span class="bulk-tools" style="margin-left:auto">
+    <span class="muted">表示中を一括:</span>
+    <button type="button" class="btn" id="bulkOn">全てON</button>
+    <button type="button" class="btn" id="bulkOff">全てOFF</button>
+  </span>
+  {% endif %}
+</div>
 
 {% if rows %}
 <table class="list">
@@ -68,6 +77,33 @@
         body: JSON.stringify({ name: name, included: included })
       }).catch(function () {});
     });
+  });
+
+  /* 要望③: 表示中（絞り込み結果）の機関を一括ON/OFF */
+  function bulk(included) {
+    var cbs = Array.prototype.slice.call(document.querySelectorAll('.agc'));
+    if (!cbs.length) return;
+    var names = [];
+    var list = load();
+    cbs.forEach(function (cb) {
+      cb.checked = included;
+      cb.closest('tr').classList.toggle('agc-off', !included);
+      var name = cb.getAttribute('data-name');
+      names.push(name);
+      var i = list.indexOf(name);
+      if (!included && i < 0) list.push(name);   // 除外に追加
+      if (included && i >= 0) list.splice(i, 1); // 除外から解除
+    });
+    save(list);
+    fetch('/agencies/toggle-bulk', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ names: names, included: included })
+    }).catch(function () {});
+  }
+  var on = document.getElementById('bulkOn'), off = document.getElementById('bulkOff');
+  if (on) on.addEventListener('click', function () { bulk(true); });
+  if (off) off.addEventListener('click', function () {
+    if (confirm('表示中の ' + document.querySelectorAll('.agc').length + ' 機関を全て「案件を探す」から除外します。よろしいですか？')) bulk(false);
   });
 })();
 </script>

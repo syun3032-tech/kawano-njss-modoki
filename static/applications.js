@@ -223,8 +223,9 @@
       warn = '<div class="warnbar"><span class="wb-title">直近の締切（入札1週間前〜）</span>' +
         soon.slice(0, 6).map(function (x) {
           var b = band(x.d);
-          return '<span class="wb-item" style="background:' + b.bg + ";color:" + b.fg + '">' +
-            esc(x.ms.label) + " " + md(x.ms.date) + "・" + daysLabel(x.d) + "</span>";
+          // クリックで該当案件を開く（要望⑩）。どの案件のアラートか分かるよう案件名も添える。
+          return '<button type="button" class="wb-item" data-case="' + x.c.case_id + '" title="クリックで案件を開く" style="background:' + b.bg + ";color:" + b.fg + '">' +
+            esc(x.ms.label) + " " + md(x.ms.date) + "・" + daysLabel(x.d) + ' <b class="wb-name">' + esc(x.c.title) + "</b></button>";
         }).join("") + "</div>";
     }
 
@@ -437,6 +438,13 @@
         if (c && confirm("「" + c.title + "」をNG（不参加）に移動しますか？")) { c.status = "NG"; saveCase(c); }
       });
     });
+    // 直近の締切アラート→クリックで該当案件を開く（要望⑩）
+    Array.prototype.forEach.call(document.querySelectorAll(".wb-item"), function (b) {
+      b.addEventListener("click", function () {
+        var c = CASES.filter(function (x) { return String(x.case_id) === b.getAttribute("data-case"); })[0];
+        if (c) openCaseModal(c);
+      });
+    });
     // 案件を追加（開いている管理シートの区分を初期値にする）
     var ac = $("addCaseBtn"); if (ac) ac.addEventListener("click", function () { openNewCaseModal(ac.getAttribute("data-sec") || "公共"); });
     // 協力会社
@@ -570,9 +578,14 @@
         var st = qState(q), isMin = ch && ch === q;
         var co = COMPANIES.filter(function (x) { return x.name === q.company; })[0];
         var tel = q.tel || (co && co.tel) || "";
+        // 協力会社マスタに無い会社（手入力）は会社名を直接入力できるようにする（要望⑥）
+        var editable = q.manual || !co;
+        var nameCell = editable
+          ? '<input class="q-co mq-co" data-i="' + i + '" value="' + esc(q.company) + '" placeholder="会社名を入力">'
+          : '<span class="mq-co">' + esc(q.company) + (isMin ? ' <span class="mq-min">最安</span>' : "") + "</span>";
         return '<div class="mq-row' + (q.selected ? " sel" : "") + '" data-i="' + i + '"><div class="mq-r1">' +
           '<button type="button" class="mq-star' + (q.selected ? " on" : "") + '" data-act="select"' + (q.feasible === 1 ? "" : " disabled") + ">★</button>" +
-          '<span class="mq-co">' + esc(q.company) + (isMin ? ' <span class="mq-min">最安</span>' : "") + "</span>" +
+          nameCell +
           '<span class="mq-stt" style="background:' + st.color + "1a;color:" + st.color + '">' + st.label + "</span>" +
           (tel ? '<a class="mq-tel" href="tel:' + esc(tel) + '">電話</a>' : "") +
           '<button type="button" class="mq-del" data-act="del">×</button></div><div class="mq-r2">' +
@@ -660,7 +673,11 @@
           redraw(root);
         };
       });
-      var add = root.querySelector("#mqAdd"); if (add) add.onclick = function () { c.partners.push({ company: "新規会社", amount: "", requested: 0, replied: 0, feasible: 0, selected: 0 }); redraw(root); };
+      var add = root.querySelector("#mqAdd"); if (add) add.onclick = function () { c.partners.push({ company: "", manual: 1, amount: "", requested: 0, replied: 0, feasible: 0, selected: 0 }); redraw(root); };
+      // 手入力で足した会社は名前を直接編集できる（要望⑥）
+      Array.prototype.forEach.call(root.querySelectorAll(".q-co"), function (inp) {
+        inp.oninput = function () { c.partners[Number(inp.getAttribute("data-i"))].company = inp.value; };
+      });
       var aw = root.querySelector("#awardBtn"); if (aw) aw.onclick = function () { c.award_called = c.award_called ? 0 : 1; redraw(root); };
       Array.prototype.forEach.call(root.querySelectorAll(".q-amt"), function (inp) {
         inp.oninput = function () { c.partners[Number(inp.getAttribute("data-i"))].amount = inp.value; };
@@ -764,9 +781,40 @@
     });
   }
 
+  /* ---------- 対応エリア（地方＋詳細）ヘルパー（要望⑨②） ----------
+     入力形式を「地方（8区分・複数可）＋詳細フリーテキスト」に固定する。
+     保存は互換のため既存の area 文字列1本に "地方・地方 ｜ 詳細" 形式で格納。 */
+  var REGION_NAMES = ["北海道・東北", "関東", "甲信越・北陸", "東海", "近畿", "中国", "四国", "九州・沖縄"];
+  function parseArea(area) {
+    area = String(area || "");
+    var parts = area.split("｜");
+    if (parts.length >= 2) {
+      var left = parts[0];
+      return { regions: REGION_NAMES.filter(function (r) { return left.indexOf(r) >= 0; }),
+               detail: parts.slice(1).join("｜").trim() };
+    }
+    // 旧データ（自由記入）: 地方名が含まれれば拾い、残りを詳細に回す。
+    var regions = REGION_NAMES.filter(function (r) { return area.indexOf(r) >= 0; });
+    var detail = area;
+    regions.forEach(function (r) { detail = detail.split(r).join(""); });
+    detail = detail.replace(/[・,、\s]+/g, " ").trim();
+    return { regions: regions, detail: detail };
+  }
+  function buildArea(regions, detail) {
+    var r = regions.join("・");
+    detail = (detail || "").trim();
+    if (r && detail) return r + " ｜ " + detail;
+    return r || detail;
+  }
+
   /* ---------- 協力会社 編集モーダル ---------- */
   function openCompanyModal(c) {
     c = c || { tags: [], reviews: [], rating: 0 };
+    var parsedArea = parseArea(c.area);
+    var regionBtns = REGION_NAMES.map(function (r) {
+      var on = parsedArea.regions.indexOf(r) >= 0;
+      return '<button type="button" class="tagpick regionpick' + (on ? " on" : "") + '" data-r="' + esc(r) + '" style="--c:#2563eb">' + esc(r) + "</button>";
+    }).join("");
     var tagBtns = Object.keys(WORK).map(function (t) {
       var on = (c.tags || []).indexOf(t) >= 0;
       return '<button type="button" class="tagpick' + (on ? " on" : "") + '" data-t="' + esc(t) + '" style="--c:' + workColor(t) + '">' + esc(t) + "</button>";
@@ -775,7 +823,8 @@
     var revs = (c.reviews || []).join("\n");
     var body = '<div class="m-grid">' +
       fld("会社名", '<input name="name" value="' + esc(c.name) + '">', "full") +
-      fld("対応エリア", '<input name="area" value="' + esc(c.area) + '" placeholder="大阪府八尾市 等">') +
+      '<div class="m-fld full"><span>対応エリア（地方）<em style="font-weight:400;color:var(--text-tertiary)"> 複数選択可</em></span><div class="tagpicks" id="regionPick">' + regionBtns + "</div></div>" +
+      fld("対応可能エリアの詳細", '<input name="area_detail" value="' + esc(parsedArea.detail) + '" placeholder="例: 大阪府のみ対応可能 / 兵庫県東部 等">', "full") +
       fld("電話", '<input name="tel" value="' + esc(c.tel) + '">') +
       fld("URL", '<input name="url" value="' + esc(c.url) + '">', "full") +
       fld("特徴・メモ", '<input name="note" value="' + esc(c.note) + '">', "full") +
@@ -798,10 +847,12 @@
       root.querySelector(".m-save").addEventListener("click", function () {
         var g = function (n) { var e = root.querySelector('[name="' + n + '"]'); return e ? e.value.trim() : ""; };
         if (!g("name")) { alert("会社名は必須です"); return; }
+        var regions = Array.prototype.map.call(root.querySelectorAll("#regionPick .regionpick.on"), function (b) { return b.getAttribute("data-r"); });
         var data = {
-          id: c.id, name: g("name"), area: g("area"), tel: g("tel"), url: g("url"), note: g("note"),
+          id: c.id, name: g("name"), area: buildArea(regions, g("area_detail")), tel: g("tel"), url: g("url"), note: g("note"),
           partner: root.querySelector('[name="partner"]').checked, rating: rating,
-          tags: Array.prototype.filter.call(root.querySelectorAll(".tagpick.on"), function () { return true; }).map(function (b) { return b.getAttribute("data-t"); }),
+          // 工事カテゴリのみ拾う（地方チップと混ざらないよう #tagPick に限定）
+          tags: Array.prototype.map.call(root.querySelectorAll("#tagPick .tagpick.on"), function (b) { return b.getAttribute("data-t"); }),
           reviews: g("reviews").split("\n").map(function (s) { return s.trim(); }).filter(Boolean)
         };
         fetch("/companies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) })
